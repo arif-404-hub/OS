@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EngineerOS</title>
+<meta name="description" content="AI-Powered Software Engineering Intelligence Platform">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- ------------------------------------------------------ sign in ------ -->
+<div id="auth" class="auth">
+  <div class="auth-brand">
+    <div class="logo">⚙</div>
+    <h1>EngineerOS</h1>
+    <p>AI-Powered Software Engineering Intelligence Platform</p>
+    <ul class="auth-points">
+      <li>Turn a plain-English brief into structured requirements</li>
+      <li>Generate an IEEE-830 SRS and eight UML diagram types</li>
+      <li>Plan sprints and trace every requirement to delivery</li>
+    </ul>
+  </div>
+
+  <div class="auth-card">
+    <div class="tabs" id="authTabs">
+      <button class="tab active" data-mode="login">Sign in</button>
+      <button class="tab" data-mode="register">Create account</button>
+    </div>
+
+    <form id="authForm" autocomplete="on">
+      <div class="field reg-only hidden">
+        <label for="authName">Full name</label>
+        <input id="authName" name="name" type="text" autocomplete="name" placeholder="Purnata Choudhury">
+      </div>
+
+      <div class="field">
+        <label for="authEmail">Email</label>
+        <input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com">
+      </div>
+
+      <div class="field">
+        <label for="authPassword">Password</label>
+        <input id="authPassword" name="password" type="password" autocomplete="current-password" required placeholder="At least 6 characters">
+      </div>
+
+      <div class="field reg-only hidden">
+        <label for="authRole">Role</label>
+        <select id="authRole" name="role">
+          <option value="PM">Project manager</option>
+          <option value="DEVELOPER" selected>Developer</option>
+          <option value="TESTER">Tester</option>
+          <option value="DESIGNER">Designer</option>
+          <option value="CLIENT">Client</option>
+          <option value="ADMIN">Administrator</option>
+        </select>
+      </div>
+
+      <p class="error hidden" id="authError"></p>
+      <button class="btn primary block" type="submit" id="authSubmit">Sign in</button>
+      <p class="hint">Demo account: <code>demo@engineeros.dev</code> / <code>demo1234</code></p>
+    </form>
+  </div>
+</div>
+
+<!-- ---------------------------------------------------------- app ------ -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">⚙</span> EngineerOS</div>
+
+    <div class="project-picker">
+      <label for="projectSelect">Project</label>
+      <select id="projectSelect"></select>
+      <button class="btn ghost small block" id="newProjectBtn">+ New project</button>
+    </div>
+
+    <nav id="nav">
+      <button class="nav-item active" data-view="dashboard"><span>▦</span> Dashboard</button>
+      <button class="nav-item" data-view="requirements"><span>◈</span> Requirements</button>
+      <button class="nav-item" data-view="srs"><span>▤</span> SRS document</button>
+      <button class="nav-item" data-view="uml"><span>◇</span> UML diagrams</button>
+      <button class="nav-item" data-view="board"><span>▥</span> Sprint board</button>
+      <button class="nav-item" data-view="bugs"><span>⬤</span> Bug tracker</button>
+      <button class="nav-item" data-view="trace"><span>⇄</span> Traceability</button>
+      <button class="nav-item" data-view="review"><span>⌘</span> Code review</button>
+      <button class="nav-item" data-view="assistant"><span>✦</span> Assistant</button>
+      <button class="nav-item" data-view="team"><span>♟</span> Team</button>
+    </nav>
+
+    <div class="user-box">
+      <div class="avatar" id="userAvatar">?</div>
+      <div class="user-meta">
+        <strong id="userName">—</strong>
+        <span id="userRole">—</span>
+      </div>
+      <button class="btn ghost small" id="logoutBtn" title="Sign out">⏻</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h2 id="viewTitle">Dashboard</h2>
+        <p id="viewSubtitle" class="muted">Project health at a glance</p>
+      </div>
+      <div id="topbarActions" class="row"></div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- Modal used for new project, new task, new bug -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <header><h3 id="modalTitle">Title</h3><button class="btn ghost small" id="modalClose">✕</button></header>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
