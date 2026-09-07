@@ -6,6 +6,7 @@ import { loadProject } from './projects.js';
 import { generateUML, reviewCode, detectConflicts } from '../ai.js';
 import { projectRequirements } from './requirements.js';
 import { buildSRS, renderSRSHtml, renderSRSMarkdown } from '../srs.js';
+import { getProjectContext } from '../project-context.js';
 
 export const router = Router({ mergeParams: true });
 router.use(requireAuth, loadProject);
@@ -19,8 +20,12 @@ router.get('/uml/:type', (req, res) => {
   if (!DIAGRAM_TYPES.some(([t]) => t === req.params.type)) {
     return res.status(400).json({ error: `Unknown diagram type "${req.params.type}".` });
   }
-  const mermaid = generateUML(req.params.type, req.project, projectRequirements(req.project.id));
-  res.json({ type: req.params.type, mermaid });
+  const context = getProjectContext(req.project);
+  if (!context.generatedRequirements.length) {
+    return res.status(409).json({ error: 'Generate requirements first.', context });
+  }
+  const mermaid = generateUML(req.params.type, req.project, context.generatedRequirements);
+  res.json({ type: req.params.type, mermaid, context });
 });
 
 // Requirement -> user story -> task -> bug, end to end.
@@ -194,8 +199,12 @@ router.post('/ask', (req, res) => {
 // ------------------------------------------------------------------ SRS ----
 
 router.get('/srs', (req, res) => {
+  const context = getProjectContext(req.project);
+  if (!context.generatedRequirements.length) {
+    return res.status(409).json({ error: 'Generate requirements first.', context });
+  }
   const owner = get('SELECT name, email FROM users WHERE id = ?', req.project.owner_id);
-  const srs = buildSRS(req.project, projectRequirements(req.project.id), owner);
+  const srs = buildSRS(req.project, context.generatedRequirements, owner);
   const slug = req.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
 
   if (req.query.format === 'markdown') {

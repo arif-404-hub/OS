@@ -288,7 +288,20 @@ function entityWords(requirements) {
   return words.length ? words : ['Entity'];
 }
 
-const clean = (s) => String(s).replace(/["`\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 55);
+function requirementActors(requirements) {
+  const actors = requirements
+    .map((r) => (String(r.story || '').match(/^As an? ([^,]+),/i) || [])[1])
+    .map((actor) => clean(actor))
+    .filter(Boolean);
+  return [...new Set(actors)].slice(0, 5);
+}
+
+const clean = (s) => String(s ?? '').replace(/["`\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 55);
+const mermaidId = (s, fallback = 'Node') => {
+  const id = String(s ?? '').replace(/[^A-Za-z0-9_]/g, '').replace(/^[^A-Za-z_]+/, '');
+  return id || fallback;
+};
+const mermaidLabel = (s) => clean(s).replace(/[()[\]{}<>]/g, ' ');
 
 /**
  * Generate Mermaid source for a diagram type from the project's requirements.
@@ -298,26 +311,28 @@ export function generateUML(type, project, requirements) {
   const fr = requirements.filter((r) => r.kind === 'functional');
   const top = (fr.length ? fr : [{ code: 'FR-001', title: 'Core feature' }]).slice(0, 8);
   const entities = entityWords(requirements.length ? requirements : [{ description: project.description }]);
-  const roles = [...new Set(requirements.map((r) => (String(r.story).match(/^As an? ([^,]+),/) || [])[1]).filter(Boolean))].slice(0, 4);
+  const roles = requirementActors(requirements);
   const actors = roles.length ? roles : ['user'];
-  const short = (s) => clean(s).replace(/[^A-Za-z0-9]/g, '') || 'Actor';
+  const short = (s) => mermaidId(s, 'Actor');
 
   switch (type) {
     case 'usecase':
       return [
         'graph LR',
-        ...actors.map((a, i) => `  A${i}(["${clean(a)}"]):::actor`),
-        `  subgraph ${clean(project.name)}`,
-        ...top.map((r, i) => `    U${i}(("${clean(r.title)}"))`),
+        ...actors.map((a, i) => `  A${i}(["${mermaidLabel(a)}"]):::actor`),
+        `  subgraph System["${mermaidLabel(project.name)}"]`,
+        ...top.map((r, i) => `    U${i}(("${mermaidLabel(r.title)}"))`),
         '  end',
         ...top.map((_, i) => `  A${i % actors.length} --> U${i}`),
         '  classDef actor fill:#2563eb,stroke:#1e40af,color:#fff',
       ].join('\n');
 
     case 'class':
+      {
+        const classNames = [...new Set(entities.map((entity, i) => mermaidId(entity, `Entity${i + 1}`)))];
       return [
         'classDiagram',
-        ...entities.map((e) => [
+        ...classNames.map((e) => [
           `  class ${e} {`,
           '    +int id',
           '    +String name',
@@ -326,41 +341,46 @@ export function generateUML(type, project, requirements) {
           '    +delete() void',
           '  }',
         ].join('\n')),
-        ...entities.slice(1).map((e) => `  ${entities[0]} "1" --> "*" ${e}`),
+        ...classNames.slice(1).map((e) => `  ${classNames[0]} "1" --> "*" ${e}`),
       ].join('\n');
+      }
 
     case 'sequence':
       return [
         'sequenceDiagram',
-        `  actor ${short(actors[0])} as ${clean(actors[0])}`,
+        `  actor ${short(actors[0])} as ${mermaidLabel(actors[0])}`,
         '  participant UI as Web Client',
         '  participant API as EngineerOS API',
         '  participant AI as Analysis Engine',
         '  participant DB as Database',
         ...top.slice(0, 3).flatMap((r) => [
-          `  ${short(actors[0])}->>UI: ${clean(r.title)}`,
+          `  ${short(actors[0])}->>UI: ${mermaidLabel(r.title)}`,
           '  UI->>API: request with Bearer token',
           '  API->>AI: analyse and validate',
           '  AI-->>API: structured result',
           '  API->>DB: persist',
           '  DB-->>API: ok',
-          `  API-->>UI: 200 ${clean(r.code)} saved`,
+          `  API-->>UI: 200 ${mermaidLabel(r.code)} saved`,
         ]),
       ].join('\n');
 
     case 'activity':
+      {
+        const steps = top.slice(0, 5);
       return [
         'flowchart TD',
         '  S([Start]) --> L[Sign in]',
         '  L --> V{Credentials valid?}',
         '  V -- No --> E[Show error] --> L',
         '  V -- Yes --> P[Open project]',
-        ...top.slice(0, 4).map((r, i) => `  P --> T${i}["${clean(r.title)}"] --> R`),
-        '  R{Validation passed?}',
-        '  R -- No --> F[Return issues] --> P',
-        '  R -- Yes --> C[Persist and log activity]',
+        ...steps.map((r, i) => `  P --> T${i}["${mermaidLabel(r.title)}"] --> R${i}`),
+        ...steps.slice(0, -1).map((_, i) => `  R${i} --> T${i + 1}`),
+        `  R${Math.max(0, steps.length - 1)} --> V2{Validation passed?}`,
+        '  V2 -- No --> F[Return issues] --> P',
+        '  V2 -- Yes --> C[Persist and log activity]',
         '  C --> D([End])',
       ].join('\n');
+      }
 
     case 'er':
       return [
@@ -373,12 +393,42 @@ export function generateUML(type, project, requirements) {
         '  REQUIREMENT ||--o{ TASK : "traced to"',
         '  SPRINT ||--o{ TASK : includes',
         '  TASK ||--o{ BUG : produces',
-        '  USER { int id PK string name string email string role }',
-        '  PROJECT { int id PK string name string description int owner_id FK }',
-        '  REQUIREMENT { int id PK string code string kind string priority int quality }',
-        '  SPRINT { int id PK string name string status }',
-        '  TASK { int id PK string title string status int points }',
-        '  BUG { int id PK string title string severity string status }',
+        '  USER {',
+        '    int id PK',
+        '    string name',
+        '    string email',
+        '    string role',
+        '  }',
+        '  PROJECT {',
+        '    int id PK',
+        '    string name',
+        '    string description',
+        '    int owner_id FK',
+        '  }',
+        '  REQUIREMENT {',
+        '    int id PK',
+        '    string code',
+        '    string kind',
+        '    string priority',
+        '    int quality',
+        '  }',
+        '  SPRINT {',
+        '    int id PK',
+        '    string name',
+        '    string status',
+        '  }',
+        '  TASK {',
+        '    int id PK',
+        '    string title',
+        '    string status',
+        '    int points',
+        '  }',
+        '  BUG {',
+        '    int id PK',
+        '    string title',
+        '    string severity',
+        '    string status',
+        '  }',
       ].join('\n');
 
     case 'state':
@@ -395,9 +445,13 @@ export function generateUML(type, project, requirements) {
       ].join('\n');
 
     case 'component':
+      {
+        const qualityAreas = [...new Set(requirements
+          .filter((r) => r.kind !== 'functional')
+          .map((r) => clean(r.category || 'Quality')))].slice(0, 5);
       return [
         'graph TB',
-        '  subgraph Client',
+        `  subgraph Client["${mermaidLabel(project.name)} client"]`,
         '    UI[Web Client]',
         '  end',
         '  subgraph Server',
@@ -407,6 +461,11 @@ export function generateUML(type, project, requirements) {
         '    S[SRS Generator]',
         '    U[UML Generator]',
         '  end',
+        ...(qualityAreas.length ? [
+          '  subgraph Quality["Quality concerns"]',
+          ...qualityAreas.map((area, i) => `    Q${i}["${mermaidLabel(area)}"]`),
+          '  end',
+        ] : []),
         '  subgraph Data',
         '    DB[(SQLite)]',
         '  end',
@@ -418,7 +477,9 @@ export function generateUML(type, project, requirements) {
         '  A --> DB',
         '  E --> DB',
         '  S --> DB',
+        ...qualityAreas.map((_, i) => `  E -.-> Q${i}`),
       ].join('\n');
+      }
 
     case 'deployment':
       return [
@@ -434,7 +495,7 @@ export function generateUML(type, project, requirements) {
         '  subgraph Storage[Storage Volume]',
         '    D[(SQLite file and WAL)]',
         '  end',
-        '  B -->|HTTPS JSON| X',
+        `  B -->|HTTPS JSON| X`,
         '  X -->|file IO| D',
       ].join('\n');
 

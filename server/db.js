@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS activity (
 );
 `);
 
+// Add new project context fields without rebuilding or losing existing data.
+try { db.exec("ALTER TABLE projects ADD COLUMN project_type TEXT NOT NULL DEFAULT ''"); } catch (error) {
+  if (!String(error.message).includes('duplicate column name')) throw error;
+}
+
 /** Run a SELECT and return all rows. */
 export const all = (sql, ...args) => db.prepare(sql).all(...args);
 /** Run a SELECT and return the first row (or undefined). */

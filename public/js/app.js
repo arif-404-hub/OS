@@ -41,15 +41,24 @@ const emptyState = (icon, text) => `<div class="empty"><div class="big">${icon}<
 
 let authMode = 'login';
 
+function setAuthMode(mode) {
+  authMode = mode;
+  document.querySelectorAll('#authTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.mode === mode));
+  document.querySelectorAll('.reg-only').forEach((f) => f.classList.toggle('hidden', mode !== 'register'));
+  el('authSubmit').textContent = mode === 'login' ? 'Sign in' : 'Create account';
+  el('authPassword').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  el('authError').classList.add('hidden');
+}
+
 el('authTabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
   if (!tab) return;
-  authMode = tab.dataset.mode;
-  document.querySelectorAll('#authTabs .tab').forEach((t) => t.classList.toggle('active', t === tab));
-  document.querySelectorAll('.reg-only').forEach((f) => f.classList.toggle('hidden', authMode !== 'register'));
-  el('authSubmit').textContent = authMode === 'login' ? 'Sign in' : 'Create account';
-  el('authPassword').autocomplete = authMode === 'login' ? 'current-password' : 'new-password';
-  el('authError').classList.add('hidden');
+  setAuthMode(tab.dataset.mode);
+});
+
+el('auth').addEventListener('click', (e) => {
+  const control = e.target.closest('[data-auth-mode]');
+  if (control) setAuthMode(control.dataset.authMode);
 });
 
 el('authForm').addEventListener('submit', async (e) => {
@@ -93,6 +102,8 @@ async function startApp() {
   el('userName').textContent = state.user.name;
   el('userRole').textContent = state.user.role;
   el('userAvatar').textContent = state.user.name.charAt(0).toUpperCase();
+  el('topUserName').textContent = state.user.name;
+  el('topAvatar').textContent = state.user.name.charAt(0).toUpperCase();
 
   state.users = await api.get('/auth/users').catch(() => []);
   await loadProjects();
@@ -130,7 +141,11 @@ function newProjectDialog(first) {
     </div>
     <div class="field">
       <label for="pDesc">Description</label>
-      <textarea id="pDesc" placeholder="What the system does, who uses it, and why it exists."></textarea>
+      <textarea id="pDesc" rows="6" placeholder="What the system does, who uses it, the main workflows, and why it exists."></textarea>
+    </div>
+    <div class="field">
+      <label for="pType">Project type / domain <span class="muted">(optional)</span></label>
+      <input id="pType" placeholder="e.g. Smart waste management, healthcare, fintech">
     </div>
     <p class="error hidden" id="pError"></p>
     <button class="btn primary block" id="pSave">Create project</button>
@@ -138,7 +153,7 @@ function newProjectDialog(first) {
     el('pName').focus();
     el('pSave').addEventListener('click', async () => {
       try {
-        const created = await api.post('/projects', { name: el('pName').value, description: el('pDesc').value });
+        const created = await api.post('/projects', { name: el('pName').value, description: el('pDesc').value, project_type: el('pType').value });
         closeModal();
         state.project = created;
         await loadProjects();
@@ -165,7 +180,7 @@ const VIEW_META = {
   dashboard: ['Dashboard', 'Project health, velocity and risk at a glance'],
   requirements: ['Requirements', 'Generate, score and review functional and non-functional requirements'],
   srs: ['SRS document', 'IEEE-830 specification generated from your requirements'],
-  uml: ['UML diagrams', 'Eight diagram types generated from the requirement set'],
+  uml: ['UML diagrams', 'AI-generated from the active requirement set'],
   board: ['Sprint board', 'Plan, assign and move work across the sprint'],
   bugs: ['Bug tracker', 'Defects by severity, with duplicate detection'],
   trace: ['Traceability', 'Requirement to story to task to defect, end to end'],
@@ -221,20 +236,24 @@ async function renderDashboard() {
   const maxVelocity = Math.max(1, ...a.velocity.map((v) => Math.max(v.planned, v.completed)));
 
   el('view').innerHTML = `
-    <div class="grid cols-4">
-      <div class="stat"><div class="label">Project health</div><div class="value" style="color:${a.health >= 75 ? 'var(--ok)' : a.health >= 45 ? 'var(--warn)' : 'var(--bad)'}">${a.health}</div>
+    <div class="card project-overview">
+      <div class="panel-heading"><h3><span class="panel-icon blue">◆</span> Project overview</h3><button class="btn small" id="editProjectBtn">Edit description</button></div>
+      <div class="overview-grid"><div><span class="overview-label">Project name</span><strong>${esc(state.project.name)}</strong></div><div><span class="overview-label">Description</span><p>${esc(state.project.description || 'No description saved.')}</p></div><div><span class="overview-label">Status</span><span class="pill green">Active</span></div><div><span class="overview-label">Created</span><span>${esc(state.project.created_at || '—')}</span></div></div>
+    </div>
+    <div class="grid cols-4 dashboard-stats">
+      <div class="stat dashboard-stat"><div class="stat-icon blue">◉</div><div class="label">Project health <span>›</span></div><div class="value" style="color:${a.health >= 75 ? 'var(--ok)' : a.health >= 45 ? 'var(--warn)' : 'var(--bad)'}">${a.health}</div>
         <div class="sub">out of 100</div>${meter(a.health)}</div>
-      <div class="stat"><div class="label">Requirements</div><div class="value">${a.totals.requirements}</div>
+      <div class="stat dashboard-stat"><div class="stat-icon violet">▤</div><div class="label">Requirements <span>›</span></div><div class="value">${a.totals.requirements}</div>
         <div class="sub">${a.totals.functional} functional &middot; ${a.totals.nonFunctional} non-functional</div></div>
-      <div class="stat"><div class="label">Sprint progress</div><div class="value">${a.points.progress}%</div>
+      <div class="stat dashboard-stat"><div class="stat-icon teal">▣</div><div class="label">Sprint progress <span>›</span></div><div class="value">${a.points.progress}%</div>
         <div class="sub">${a.points.done} of ${a.points.total} story points</div>${meter(a.points.progress)}</div>
-      <div class="stat"><div class="label">Open defects</div><div class="value" style="color:${a.totals.openBugs ? 'var(--bad)' : 'var(--ok)'}">${a.totals.openBugs}</div>
+      <div class="stat dashboard-stat"><div class="stat-icon rose">⬡</div><div class="label">Open defects <span>›</span></div><div class="value" style="color:${a.totals.openBugs ? 'var(--bad)' : 'var(--ok)'}">${a.totals.openBugs}</div>
         <div class="sub">${a.bySeverity.critical} critical &middot; ${a.bySeverity.high} high</div></div>
     </div>
 
-    <div class="grid cols-2" style="margin-top:16px">
-      <div class="card">
-        <h3>Quality signals</h3>
+    <div class="grid cols-2 dashboard-panels" style="margin-top:16px">
+      <div class="card dashboard-panel">
+        <div class="panel-heading"><h3><span class="panel-icon blue">▥</span> Quality signals</h3><a href="#" data-dashboard-view="requirements">View details →</a></div>
         ${[['Requirement quality', a.avgQuality, ''], ['Traceability coverage', a.traceability, ''],
            ['Technical debt', a.debt, 'inverted']].map(([label, value, inverted]) => `
           <div style="margin-bottom:14px">
@@ -249,8 +268,8 @@ async function renderDashboard() {
         </div>
       </div>
 
-      <div class="card">
-        <h3>Risk register</h3>
+      <div class="card dashboard-panel">
+        <div class="panel-heading"><h3><span class="panel-icon blue">⬡</span> Risk register</h3><a href="#" data-dashboard-view="requirements">View all →</a></div>
         ${a.risks.map((r) => `
           <div class="finding ${r.level === 'high' ? 'high' : r.level === 'medium' ? 'medium' : 'low'}">
             <span class="pill ${r.level === 'high' ? 'red' : r.level === 'medium' ? 'amber' : 'green'}">${r.level}</span>
@@ -260,8 +279,8 @@ async function renderDashboard() {
     </div>
 
     <div class="grid cols-2" style="margin-top:16px">
-      <div class="card">
-        <h3>Velocity by sprint</h3>
+      <div class="card dashboard-panel">
+        <div class="panel-heading"><h3><span class="panel-icon blue">⌁</span> Velocity by sprint</h3><a href="#" data-dashboard-view="board">View details →</a></div>
         ${a.velocity.length ? a.velocity.map((v) => `
           <div style="margin-bottom:13px">
             <div class="row" style="justify-content:space-between;font-size:13.5px">
@@ -272,8 +291,8 @@ async function renderDashboard() {
           </div>`).join('') : '<p class="muted">No sprints yet.</p>'}
       </div>
 
-      <div class="card">
-        <h3>Work distribution</h3>
+      <div class="card dashboard-panel">
+        <div class="panel-heading"><h3><span class="panel-icon blue">♟</span> Work distribution</h3><a href="#" data-dashboard-view="board">View details →</a></div>
         ${Object.entries(a.byStatus).map(([status, count]) => `
           <div style="margin-bottom:11px">
             <div class="row" style="justify-content:space-between;font-size:13.5px">
@@ -291,16 +310,47 @@ async function renderDashboard() {
             <td><strong>${esc(x.user || 'Someone')}</strong> ${esc(x.message)}</td></tr>`).join('')}
       </tbody></table>` : '<p class="muted">Nothing has happened on this project yet.</p>'}
     </div>`;
+
+  el('view').addEventListener('click', (event) => {
+    const link = event.target.closest('[data-dashboard-view]');
+    if (!link) return;
+    event.preventDefault();
+    state.view = link.dataset.dashboardView;
+    document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === state.view));
+    render();
+  });
+  el('editProjectBtn').addEventListener('click', editProjectDialog);
+}
+
+function editProjectDialog() {
+  openModal('Edit project description', `
+    <div class="field"><label for="editName">Project name</label><input id="editName" value="${esc(state.project.name)}"></div>
+    <div class="field"><label for="editDesc">Project description</label><textarea id="editDesc" rows="8">${esc(state.project.description || '')}</textarea></div>
+    <div class="field"><label for="editType">Project type / domain <span class="muted">(optional)</span></label><input id="editType" value="${esc(state.project.project_type || '')}"></div>
+    <p class="error hidden" id="editError"></p><button class="btn primary block" id="editSave">Save changes</button>
+  `, () => {
+    el('editSave').addEventListener('click', async () => {
+      try {
+        state.project = await api.patch(`/projects/${state.project.id}`, { name: el('editName').value, description: el('editDesc').value, project_type: el('editType').value });
+        closeModal();
+        toast('Project overview updated.');
+        render();
+      } catch (err) {
+        el('editError').textContent = err.message;
+        el('editError').classList.remove('hidden');
+      }
+    });
+  });
 }
 
 // ------------------------------------------------------- requirements -----
 
 async function renderRequirements() {
-  const { requirements, conflicts } = await api.get(`${P()}/requirements`);
+  const { requirements, conflicts, project } = await api.get(`${P()}/requirements`);
 
   el('topbarActions').innerHTML = `
     <button class="btn" id="addOneBtn">+ Add one</button>
-    <button class="btn primary" id="generateBtn">Generate from brief</button>`;
+    <button class="btn primary" id="generateBtn">Generate from project description</button>`;
 
   el('view').innerHTML = `
     ${conflicts.length ? `<div class="card" style="border-color:rgba(240,180,41,.4)">
@@ -319,7 +369,7 @@ async function renderRequirements() {
             </div>
             <div class="row">
               <span class="pill ${r.quality >= 75 ? 'green' : r.quality >= 50 ? 'amber' : 'red'}">quality ${r.quality}</span>
-              <button class="btn ghost small danger" data-del="${r.id}">Delete</button>
+              <button class="btn ghost small" data-edit="${r.id}">Edit</button><button class="btn ghost small danger" data-del="${r.id}">Delete</button>
             </div>
           </div>
           <h4 style="margin-top:9px">${esc(r.title)}</h4>
@@ -329,12 +379,19 @@ async function renderRequirements() {
           <ol class="ac">${r.acceptance.map((c) => `<li>${esc(c)}</li>`).join('')}</ol>
           ${r.issues.length ? `<div class="issues"><b>Review notes:</b> ${r.issues.map(esc).join(' ')}</div>` : ''}
         </div>`).join('')
-      : emptyState('◈', 'No requirements yet. Paste a project brief and let EngineerOS extract them.')}
+      : `<div class="empty project-source-empty"><div class="big">◈</div><strong>Generate requirements from project description</strong><p>${esc(project?.description || 'Add a project description first.')}</p><button class="btn primary" id="generateEmptyBtn">Generate requirements</button></div>`}
     </div>`;
 
   el('generateBtn').addEventListener('click', generateDialog);
+  el('generateEmptyBtn')?.addEventListener('click', generateDialog);
   el('addOneBtn').addEventListener('click', addRequirementDialog);
   el('view').addEventListener('click', async (e) => {
+    const editId = e.target.dataset?.edit;
+    if (editId) {
+      const requirement = requirements.find((item) => item.id === Number(editId));
+      if (requirement) editRequirementDialog(requirement);
+      return;
+    }
     const id = e.target.dataset?.del;
     if (!id) return;
     await api.del(`${P()}/requirements/${id}`);
@@ -343,28 +400,52 @@ async function renderRequirements() {
   });
 }
 
+function editRequirementDialog(requirement) {
+  openModal(`Edit ${requirement.code}`, `
+    <div class="field"><label for="editReqTitle">Title</label><input id="editReqTitle" value="${esc(requirement.title)}"></div>
+    <div class="field"><label for="editReqDesc">Requirement statement</label><textarea id="editReqDesc" rows="5">${esc(requirement.description)}</textarea></div>
+    <div class="field"><label for="editReqPriority">Priority</label><select id="editReqPriority"><option value="high" ${requirement.priority === 'high' ? 'selected' : ''}>High</option><option value="medium" ${requirement.priority === 'medium' ? 'selected' : ''}>Medium</option><option value="low" ${requirement.priority === 'low' ? 'selected' : ''}>Low</option></select></div>
+    <p class="error hidden" id="editReqError"></p><button class="btn primary block" id="editReqSave">Save requirement</button>
+  `, () => {
+    el('editReqSave').addEventListener('click', async () => {
+      try {
+        await api.patch(`${P()}/requirements/${requirement.id}`, { title: el('editReqTitle').value, description: el('editReqDesc').value, priority: el('editReqPriority').value });
+        closeModal();
+        toast('Requirement updated and rescored.');
+        render();
+      } catch (err) {
+        el('editReqError').textContent = err.message;
+        el('editReqError').classList.remove('hidden');
+      }
+    });
+  });
+}
+
 function generateDialog() {
-  openModal('Generate requirements from a brief', `
+  openModal('Generate requirements from project description', `
     <p class="muted" style="margin-top:0;font-size:13.5px">
-      Paste a project description, meeting notes, or a client email. Each statement is
-      classified, turned into a user story with acceptance criteria, and scored for ambiguity.
+      EngineerOS will analyse the saved project description below. Each statement is classified,
+      turned into a user story with acceptance criteria, and scored for ambiguity.
     </p>
-    <div class="field">
-      <textarea id="gText" rows="11" placeholder="The system shall allow a project manager to upload a requirements document in PDF or DOCX format.
-An administrator must be able to invite team members and assign them roles.
-The system should respond to any page request within 400 ms under 500 concurrent users.
-All passwords must be encrypted before they are stored."></textarea>
-    </div>
+    <div class="field"><label for="gText">Project description <span class="muted">(editable)</span></label><textarea id="gText" class="project-description-editor" rows="10">${esc(state.project.description || '')}</textarea></div>
     <p class="error hidden" id="gError"></p>
     <button class="btn primary block" id="gRun">Analyse and generate</button>
   `, () => {
-    el('gText').focus();
+    el('gRun').focus();
     el('gRun').addEventListener('click', async () => {
       const button = el('gRun');
       button.disabled = true;
       button.innerHTML = '<span class="spinner"></span> Analysing…';
       try {
-        const out = await api.post(`${P()}/requirements/generate`, { text: el('gText').value });
+        const description = el('gText').value.trim();
+        if (description !== state.project.description) {
+          state.project = await api.patch(`/projects/${state.project.id}`, {
+            name: state.project.name,
+            description,
+            project_type: state.project.project_type || '',
+          });
+        }
+        const out = await api.post(`${P()}/requirements/generate`);
         closeModal();
         toast(`${out.created} requirements generated.`);
         render();
@@ -424,7 +505,17 @@ async function renderSRS() {
     <button class="btn" id="srsHtml">Download HTML</button>
     <button class="btn primary" id="srsPrint">Print / Save as PDF</button>`;
 
-  const html = await api.get(`${P()}/srs`);
+  let html;
+  try {
+    html = await api.get(`${P()}/srs`);
+  } catch (err) {
+    if (err.message === 'Generate requirements first.') {
+      el('view').innerHTML = `<div class="card workflow-empty"><div class="big">▤</div><h3>Generate requirements first</h3><p class="muted">The SRS uses this project's description, user stories, acceptance criteria, and saved requirements.</p><button class="btn primary" id="goRequirements">Open Requirements</button></div>`;
+      el('goRequirements').addEventListener('click', () => { state.view = 'requirements'; render(); });
+      return;
+    }
+    throw err;
+  }
   el('view').innerHTML = `<div class="card" style="padding:0;overflow:hidden">
     <iframe id="srsFrame" style="width:100%;height:78vh;border:0;background:#fff" title="SRS document"></iframe>
   </div>`;
@@ -434,15 +525,27 @@ async function renderSRS() {
     const url = URL.createObjectURL(new Blob([content], { type }));
     const link = Object.assign(document.createElement('a'), { href: url, download: filename });
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const slug = state.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
 
   el('srsHtml').addEventListener('click', () => download(html, `SRS-${slug}.html`, 'text/html'));
   el('srsMd').addEventListener('click', async () => {
-    download(await api.get(`${P()}/srs?format=markdown`), `SRS-${slug}.md`, 'text/markdown');
+    const button = el('srsMd');
+    button.disabled = true;
+    try {
+      download(await api.get(`${P()}/srs?format=markdown`), `SRS-${slug}.md`, 'text/markdown');
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      button.disabled = false;
+    }
   });
-  el('srsPrint').addEventListener('click', () => el('srsFrame').contentWindow.print());
+  el('srsPrint').addEventListener('click', () => {
+    const frame = el('srsFrame');
+    if (frame?.contentWindow) frame.contentWindow.print();
+    else toast('The SRS document is still loading.', true);
+  });
 }
 
 // ---------------------------------------------------------------- UML -----
@@ -472,13 +575,25 @@ async function renderUML() {
     .map(([type, label]) => `<button class="btn small ${type === umlType ? 'primary' : ''}" data-uml="${type}">${label}</button>`)
     .join('');
 
-  const { mermaid } = await api.get(`${P()}/uml/${umlType}`);
+  let diagramData;
+  try {
+    diagramData = await api.get(`${P()}/uml/${umlType}`);
+  } catch (err) {
+    if (err.message === 'Generate requirements first.') {
+      el('view').innerHTML = `<div class="card workflow-empty"><div class="big">◇</div><h3>Generate requirements first</h3><p class="muted">UML diagrams are generated from this project's description and saved requirements.</p><button class="btn primary" id="goRequirements">Open Requirements</button></div>`;
+      el('goRequirements').addEventListener('click', () => { state.view = 'requirements'; render(); });
+      return;
+    }
+    throw err;
+  }
+  const { mermaid } = diagramData;
   el('view').innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h3 style="margin:0">${DIAGRAMS.find(([t]) => t === umlType)[1]} diagram</h3>
         <button class="btn small" id="copyMermaid">Copy Mermaid source</button>
       </div>
+      <p class="muted" style="margin:0 0 12px">Generated from the selected project's actors, requirements and quality concerns.</p>
       <div class="mermaid-box" id="diagram"><span class="muted">Rendering…</span></div>
     </div>
     <div class="card">

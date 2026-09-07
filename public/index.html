@@ -6,24 +6,51 @@
 <title>EngineerOS</title>
 <meta name="description" content="AI-Powered Software Engineering Intelligence Platform">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
-<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20260907-2">
 </head>
 <body>
 
 <!-- ------------------------------------------------------ sign in ------ -->
 <div id="auth" class="auth">
+  <header class="auth-header">
+    <a class="auth-logo" href="/OS/" aria-label="EngineerOS home">
+      <span class="auth-logo-mark"><i></i><i></i><i></i></span>
+      <span>Engineer<span>OS</span></span>
+    </a>
+    <nav class="auth-nav" aria-label="Main navigation">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#docs">Docs</a>
+      <a href="#about">About</a>
+    </nav>
+    <div class="auth-header-actions">
+      <span class="help-link">Need help?</span>
+      <button class="header-signin" type="button" data-auth-mode="login">Sign in</button>
+      <button class="header-start" type="button" data-auth-mode="register">Get Started</button>
+    </div>
+  </header>
+
   <div class="auth-brand">
-    <div class="logo">⚙</div>
-    <h1>EngineerOS</h1>
-    <p>AI-Powered Software Engineering Intelligence Platform</p>
+    <div class="eyebrow"><span>✦</span> AI-Powered Software Engineering Intelligence Platform</div>
+    <h1>Build Better Software,<br><strong>Faster with AI</strong></h1>
+    <p>EngineerOS brings your entire software development lifecycle together, from requirements to deployment, with the power of AI assistance.</p>
     <ul class="auth-points">
-      <li>Turn a plain-English brief into structured requirements</li>
-      <li>Generate an IEEE-830 SRS and eight UML diagram types</li>
-      <li>Plan sprints and trace every requirement to delivery</li>
+      <li><span>✓</span> AI-driven requirement analysis &amp; SRS generation</li>
+      <li><span>◇</span> UML diagrams and system design</li>
+      <li><span>▣</span> Sprint planning, traceability and project management</li>
+      <li><span>◈</span> Seamless GitHub integration and more...</li>
     </ul>
+    <div class="product-stage" aria-hidden="true">
+      <div class="product-sidebar"><b>◆ EngineerOS</b><span class="selected">▦ Dashboard</span><span>◈ Requirements</span><span>◇ UML &amp; Design</span><span>▤ Sprint Planning</span><span>⇄ Traceability</span><span>⌘ GitHub</span><span>◉ Analytics</span></div>
+      <div class="product-window"><div class="window-search">⌕ <span>Search anything...</span></div><div class="window-lines"><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+      <div class="ai-callout"><strong>✦ EngineerOS AI</strong><span>I can help you analyze requirements, generate design diagrams, or plan your next sprint.</span><b>→</b></div>
+    </div>
   </div>
 
   <div class="auth-card">
+    <div class="auth-card-brand"><span class="auth-logo-mark"><i></i><i></i><i></i></span><strong>Engineer<span>OS</span></strong></div>
+    <h2>Welcome back</h2>
+    <p class="auth-subtitle">Sign in to your account to continue</p>
     <div class="tabs" id="authTabs">
       <button class="tab active" data-mode="login">Sign in</button>
       <button class="tab" data-mode="register">Create account</button>
@@ -32,7 +59,7 @@
     <form id="authForm" autocomplete="on">
       <div class="field reg-only hidden">
         <label for="authName">Full name</label>
-        <input id="authName" name="name" type="text" autocomplete="name" placeholder="Purnata Choudhury">
+        <input id="authName" name="name" type="text" autocomplete="name" placeholder="Name">
       </div>
 
       <div class="field">
@@ -61,13 +88,19 @@
       <button class="btn primary block" type="submit" id="authSubmit">Sign in</button>
       <p class="hint">Demo account: <code>demo@engineeros.dev</code> / <code>demo1234</code></p>
     </form>
+    <div class="auth-divider"><span>OR</span></div>
+    <button class="social-button" type="button" disabled><b>G</b> Continue with Google</button>
+    <button class="social-button" type="button" disabled><b>●</b> Continue with GitHub</button>
+    <p class="create-note">Don't have an account? <button type="button" data-auth-mode="register">Create one</button></p>
   </div>
+
+  <footer class="auth-footer"><span>EngineerOS &nbsp; © 2025. All rights reserved.</span><span>Plan &nbsp; / &nbsp; Build &nbsp; / &nbsp; Deploy &nbsp; / &nbsp; Grow</span></footer>
 </div>
 
 <!-- ---------------------------------------------------------- app ------ -->
 <div id="app" class="app hidden">
   <aside class="sidebar">
-    <div class="brand"><span class="logo">⚙</span> EngineerOS</div>
+    <div class="brand"><span class="app-logo-mark"><i></i><i></i><i></i></span> Engineer<span>OS</span></div>
 
     <div class="project-picker">
       <label for="projectSelect">Project</label>
@@ -100,7 +133,16 @@
 
   <main class="main">
     <header class="topbar">
-      <div>
+      <div class="app-global-nav">
+        <nav aria-label="Application navigation">
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#docs">Docs</a>
+          <a href="#about">About</a>
+        </nav>
+        <div class="app-account"><span class="notification">♧<i></i></span><span class="account-divider"></span><span class="top-avatar" id="topAvatar">?</span><strong id="topUserName">—</strong><span class="account-chevron">⌄</span></div>
+      </div>
+      <div class="topbar-heading">
         <h2 id="viewTitle">Dashboard</h2>
         <p id="viewSubtitle" class="muted">Project health at a glance</p>
       </div>
@@ -120,6 +162,6 @@
   </div>
 </div>
 
-<script type="module" src="/js/app.js"></script>
+<script type="module" src="js/app.js?v=20260907-2"></script>
 </body>
 </html>
