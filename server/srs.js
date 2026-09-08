@@ -26,6 +26,40 @@ export function buildSRS(project, requirements, owner) {
   return { project, owner, functional, nonFunctional, byCategory, conflicts, avgQuality, date: today() };
 }
 
+export function buildUniversitySRS(project, requirements, owner, team = []) {
+  return { ...buildSRS(project, requirements, owner), team };
+}
+
+const universitySections = [
+  ['1. Introduction', ['1.1 Motivation', '1.2 Problem statement', '1.3 Main goal', '1.4 Stakeholders', '1.5 System development life cycle (SDLC)']],
+  ['2. System Study and Requirement Gathering', ['2.1 Information gathering and system study', '2.1.1 Mission', '2.1.2 Vision', '2.2 Information sources', '2.3 Similar websites / platforms and key insights', '2.4 Current and desired state', '2.5 Survey methodology']],
+  ['3. System Analysis', ['3.1 Gap analysis', '3.2 Feature list fixation', '3.2.1 Functional requirements', '3.2.2 Non-functional requirements', '3.3 Benchmarking', '3.4 SWOT analysis']],
+  ['4. System Design', ['4.1 Context diagram', '4.2 State diagram', '4.3 Data-flow diagram', '4.4 Class diagram', '4.5 Sequence diagram', '4.6 Use-case diagram']],
+  ['5. Prototype / UI Design', []], ['6. Conclusion', []],
+];
+
+function universitySectionContent(title, srs) {
+  const { project, functional, nonFunctional } = srs;
+  const description = esc(project.description || 'Project description not supplied.');
+  if (title === '1. Introduction') return `<p>${description}</p><p>This chapter introduces <strong>${esc(project.name)}</strong>, its motivation, problem, goal, stakeholders, and development approach.</p>`;
+  if (title === '2. System Study and Requirement Gathering') return `<p>The study is based on the project brief and analyzed requirements captured in EngineerOS.</p><p><strong>Mission:</strong> Deliver a dependable solution for the problem described in the project brief.</p><p><strong>Vision:</strong> Provide a maintainable system that meets stakeholder needs and evolves with user evidence.</p><p><strong>Information sources:</strong> Project brief, stakeholder discussions, user stories, acceptance criteria, and analyzed requirements.</p><p><strong>Survey methodology:</strong> Add survey population, sample size, questionnaire, collection method, and findings when available.</p>`;
+  if (title === '3. System Analysis') return `<p>The current analysis contains ${functional.length} functional and ${nonFunctional.length} non-functional requirements.</p><p><strong>Gap analysis:</strong> Compare the current state in the project brief with the desired capabilities in the requirements below.</p><h3>Feature list</h3><ul>${functional.map((r) => `<li>${esc(r.title)}: ${esc(r.description)}</li>`).join('') || '<li>No functional features captured yet.</li>'}</ul><p><strong>Benchmarking and SWOT analysis:</strong> Add evidence-based comparisons and strengths, weaknesses, opportunities, and threats.</p>`;
+  if (title === '4. System Design') return '<p class="placeholder">Insert the context, state, data-flow, class, sequence, and use-case diagrams for this project.</p>';
+  if (title === '5. Prototype / UI Design') return '<p class="placeholder">Insert prototype screens, wireframes, design decisions, and usability notes here.</p>';
+  return '<p>The proposed system addresses the stated problem through the analyzed requirements and provides a foundation for implementation and validation.</p>';
+}
+
+export function renderUniversitySRSHtml(srs) {
+  const { project, owner, team, date, functional, nonFunctional } = srs;
+  const teamNames = team?.length ? team.map((member) => `<li>${esc(member.name)}${member.role ? ` - ${esc(member.role)}` : ''}</li>`).join('') : '<li>Team members not recorded.</li>';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>University SRS - ${esc(project.name)}</title><style>
+  @page{margin:22mm}body{font:15px/1.65 Georgia,'Times New Roman',serif;color:#111;max-width:860px;margin:40px auto;padding:0 24px}h1{text-align:center;font-size:30px;margin:80px 0 8px}h2{font-size:21px;margin-top:38px;border-bottom:1px solid #d4d4d8;padding-bottom:6px}h3{font-size:17px;margin-top:26px}.cover{text-align:center;min-height:470px}.cover p{margin:8px 0}.meta{margin:30px auto;width:80%}table{border-collapse:collapse;width:100%;margin:14px 0}th,td{border:1px solid #d4d4d8;padding:7px 10px;text-align:left}.toc a{color:#1d4ed8;text-decoration:none}.placeholder{padding:18px;background:#f4f4f5;border-left:3px solid #2563eb}footer{margin-top:50px;border-top:1px solid #d4d4d8;padding-top:12px;font-size:12.5px;color:#71717a}</style></head><body>
+  <section class="cover"><h1>${esc(project.name)}</h1><h2>Software Requirements Specification</h2><p>University Project SRS</p><table class="meta"><tr><th>Project title</th><td>${esc(project.name)}</td></tr><tr><th>Prepared by</th><td>${esc(owner?.name || 'EngineerOS')}</td></tr><tr><th>Date</th><td>${esc(date)}</td></tr></table><h3>Team</h3><ul>${teamNames}</ul><h3>Abstract</h3><p>${esc(project.description || 'Project abstract not supplied.')}</p></section>
+  <h2>Table of contents</h2><ol class="toc">${universitySections.map(([title]) => `<li><a href="#${title.split('.')[0]}">${esc(title)}</a></li>`).join('')}<li><a href="#references">References</a></li></ol>
+  ${universitySections.map(([title, subsections]) => `<section id="${title.split('.')[0]}"><h2>${esc(title)}</h2>${subsections.map((subtitle) => `<h3>${esc(subtitle)}</h3>`).join('')}${universitySectionContent(title, srs)}${title === '3. System Analysis' ? `<h3>Requirement summary</h3><table><tr><th>Type</th><th>Count</th></tr><tr><td>Functional</td><td>${functional.length}</td></tr><tr><td>Non-functional</td><td>${nonFunctional.length}</td></tr></table>` : ''}</section>`).join('')}
+  <section id="references"><h2>References</h2><p>Add books, papers, websites, survey instruments, and other sources consulted.</p></section><footer>Generated by EngineerOS on ${esc(date)}.</footer></body></html>`;
+}
+
 /** Render the SRS as a standalone, printable HTML document. */
 export function renderSRSHtml(srs) {
   const { project, owner, functional, nonFunctional, byCategory, conflicts, avgQuality, date } = srs;
@@ -220,4 +254,20 @@ export function renderSRSMarkdown(srs) {
       : ['No conflicting or overlapping requirements were detected.', '']),
     `_Generated by EngineerOS on ${date}._`,
   ].join('\n');
+}
+
+export function renderUniversitySRSMarkdown(srs) {
+  const { project, owner, team, date, functional, nonFunctional } = srs;
+  const lines = [`# ${project.name}`, '', '## Software Requirements Specification', '', `**Project title:** ${project.name}`, `**Prepared by:** ${owner?.name || 'EngineerOS'}`, `**Date:** ${date}`, '', '## Team', ...(team?.length ? team.map((member) => `- ${member.name}${member.role ? ` - ${member.role}` : ''}`) : ['- Team members not recorded.']), '', '## Abstract', project.description || 'Project abstract not supplied.', '', '## Table of contents', ...universitySections.map(([title]) => `- ${title}`), '- References', ''];
+  universitySections.forEach(([title, subsections]) => {
+    lines.push(`## ${title}`, '', ...subsections.map((subtitle) => `### ${subtitle}`), '');
+    if (title === '1. Introduction') lines.push(project.description || 'Project description not supplied.', '', 'This chapter introduces the project motivation, problem, goal, stakeholders, and SDLC.', '');
+    else if (title === '2. System Study and Requirement Gathering') lines.push('Sources: project brief, stakeholder discussions, user stories, acceptance criteria, and analyzed requirements.', '', 'Survey methodology: add population, sample, questionnaire, collection method, and findings when available.', '');
+    else if (title === '3. System Analysis') lines.push(`The current analysis contains ${functional.length} functional and ${nonFunctional.length} non-functional requirements.`, '', '### Functional requirements', ...functional.map((r) => `- **${r.code} ${r.title}:** ${r.description}`), '', '### Non-functional requirements', ...nonFunctional.map((r) => `- **${r.code} ${r.title}:** ${r.description}`), '');
+    else if (title === '4. System Design') lines.push('Insert the context, state, data-flow, class, sequence, and use-case diagrams here.', '');
+    else if (title === '5. Prototype / UI Design') lines.push('Insert prototype screens, wireframes, design decisions, and usability notes here.', '');
+    else lines.push('The proposed system addresses the stated problem through the analyzed requirements.', '');
+  });
+  lines.push('## References', '', 'Add books, papers, websites, survey instruments, and other sources consulted.', '', `_Generated by EngineerOS on ${date}._`);
+  return lines.join('\n');
 }

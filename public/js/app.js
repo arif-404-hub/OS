@@ -501,13 +501,17 @@ function addRequirementDialog() {
 
 async function renderSRS() {
   el('topbarActions').innerHTML = `
+    <select id="srsType" aria-label="SRS format" title="Choose SRS format">
+      <option value="ieee">IEEE 830 format</option>
+      <option value="university">University project format</option>
+    </select>
     <button class="btn" id="srsMd">Download Markdown</button>
     <button class="btn" id="srsHtml">Download HTML</button>
     <button class="btn primary" id="srsPrint">Print / Save as PDF</button>`;
 
   let html;
   try {
-    html = await api.get(`${P()}/srs`);
+    html = await api.get(`${P()}/srs?type=ieee`);
   } catch (err) {
     if (err.message === 'Generate requirements first.') {
       el('view').innerHTML = `<div class="card workflow-empty"><div class="big">▤</div><h3>Generate requirements first</h3><p class="muted">The SRS uses this project's description, user stories, acceptance criteria, and saved requirements.</p><button class="btn primary" id="goRequirements">Open Requirements</button></div>`;
@@ -528,13 +532,20 @@ async function renderSRS() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const slug = state.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+  const typeName = () => el('srsType').value === 'university' ? 'University-' : '';
+  el('srsType').addEventListener('change', async () => {
+    try {
+      html = await api.get(`${P()}/srs?type=${el('srsType').value}`);
+      el('srsFrame').srcdoc = html;
+    } catch (err) { toast(err.message, true); }
+  });
 
-  el('srsHtml').addEventListener('click', () => download(html, `SRS-${slug}.html`, 'text/html'));
+  el('srsHtml').addEventListener('click', () => download(html, `SRS-${typeName()}${slug}.html`, 'text/html'));
   el('srsMd').addEventListener('click', async () => {
     const button = el('srsMd');
     button.disabled = true;
     try {
-      download(await api.get(`${P()}/srs?format=markdown`), `SRS-${slug}.md`, 'text/markdown');
+      download(await api.get(`${P()}/srs?type=${el('srsType').value}&format=markdown`), `SRS-${typeName()}${slug}.md`, 'text/markdown');
     } catch (err) {
       toast(err.message, true);
     } finally {
