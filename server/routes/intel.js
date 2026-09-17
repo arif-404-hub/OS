@@ -5,7 +5,7 @@ import { requireAuth } from '../auth.js';
 import { loadProject } from './projects.js';
 import { generateUML, reviewCode, detectConflicts } from '../ai.js';
 import { projectRequirements } from './requirements.js';
-import { buildSRS, renderSRSHtml, renderSRSMarkdown } from '../srs.js';
+import { buildSRS, buildUniversitySRS, renderSRSHtml, renderSRSMarkdown, renderUniversitySRSHtml, renderUniversitySRSMarkdown } from '../srs.js';
 import { getProjectContext } from '../project-context.js';
 
 export const router = Router({ mergeParams: true });
@@ -204,19 +204,23 @@ router.get('/srs', (req, res) => {
     return res.status(409).json({ error: 'Generate requirements first.', context });
   }
   const owner = get('SELECT name, email FROM users WHERE id = ?', req.project.owner_id);
-  const srs = buildSRS(req.project, context.generatedRequirements, owner);
+  const isUniversity = req.query.type === 'university';
+  const team = all('SELECT u.name, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.project_id = ? ORDER BY u.name', req.project.id);
+  const srs = isUniversity
+    ? buildUniversitySRS(req.project, context.generatedRequirements, owner, team)
+    : buildSRS(req.project, context.generatedRequirements, owner);
   const slug = req.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
 
   if (req.query.format === 'markdown') {
     res.type('text/markdown; charset=utf-8')
-      .set('Content-Disposition', `attachment; filename="SRS-${slug}.md"`)
-      .send(renderSRSMarkdown(srs));
+      .set('Content-Disposition', `attachment; filename="SRS-${isUniversity ? 'University-' : ''}${slug}.md"`)
+      .send(isUniversity ? renderUniversitySRSMarkdown(srs) : renderSRSMarkdown(srs));
     return;
   }
 
-  const html = renderSRSHtml(srs);
+  const html = isUniversity ? renderUniversitySRSHtml(srs) : renderSRSHtml(srs);
   if (req.query.download === '1') {
-    res.set('Content-Disposition', `attachment; filename="SRS-${slug}.html"`);
+    res.set('Content-Disposition', `attachment; filename="SRS-${isUniversity ? 'University-' : ''}${slug}.html"`);
   }
   res.type('html').send(html);
 });

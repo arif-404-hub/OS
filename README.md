@@ -36,7 +36,7 @@ The only npm dependency is Express.
 | **Auth & RBAC** | Register/sign in, six roles (Admin, PM, Developer, Tester, Designer, Client). Passwords hashed with scrypt; sessions are HMAC-signed bearer tokens. |
 | **Requirement engineering** | Paste a brief; the engine splits it into statements, classifies each as functional or non-functional (Performance, Security, Reliability, Usability, Scalability, Maintainability, Portability), writes a user story and Given/When/Then acceptance criteria, flags vague wording, and scores each requirement 0–100 for testability. |
 | **Conflict detection** | Finds requirements that overlap or contradict each other. |
-| **SRS generator** | An IEEE-830 specification built from the requirement set, viewable in-app and exportable as HTML, Markdown or PDF (via print). |
+| **SRS generator** | Choose an IEEE-830 specification or a university project format with title, team, abstract, chapters, analysis, design placeholders and references; view in-app and export as HTML, Markdown or PDF (via print). |
 | **UML generator** | Eight diagram types — use case, class, sequence, activity, ER, state, component, deployment — emitted as Mermaid and rendered in the browser. |
 | **Sprint board** | Kanban with drag-and-drop across five columns, story points, assignees, and a link from each task back to its requirement. |
 | **Bug tracker** | Severity levels, status workflow, task linking, and duplicate detection on report. |
