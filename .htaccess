@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Keep the Node API behind Apache so the app is available at /OS/.
+RewriteRule ^api/(.*)$ http://127.0.0.1:3000/api/$1 [P,L]
+
+# Serve the files from the public client directory.
+RewriteRule ^(css|js)/(.*)$ public/$1/$2 [L]
+RewriteRule ^$ public/index.html [L]
+
+# Let Apache serve the SPA entry point for client-side routes.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ public/index.html [L]
