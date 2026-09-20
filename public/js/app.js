@@ -56,6 +56,23 @@ el('authTabs').addEventListener('click', (e) => {
   setAuthMode(tab.dataset.mode);
 });
 
+async function setupSocialLogin() {
+  const buttons = { google: el('googleLogin'), github: el('githubLogin') };
+  try {
+    const providers = await api.get('/auth/providers');
+    Object.entries(buttons).forEach(([provider, button]) => {
+      const enabled = Boolean(providers[provider]);
+      button.disabled = !enabled;
+      button.title = enabled ? `Continue with ${provider[0].toUpperCase()}${provider.slice(1)}` : `${provider[0].toUpperCase()}${provider.slice(1)} login is not configured`;
+      if (enabled) button.addEventListener('click', () => { window.location.href = `/api/auth/${provider}`; });
+    });
+  } catch {
+    Object.values(buttons).forEach((button) => { button.disabled = true; });
+  }
+}
+
+setupSocialLogin();
+
 el('auth').addEventListener('click', (e) => {
   const control = e.target.closest('[data-auth-mode]');
   if (control) setAuthMode(control.dataset.authMode);
@@ -563,7 +580,8 @@ async function renderSRS() {
 
 const DIAGRAMS = [
   ['usecase', 'Use case'], ['class', 'Class'], ['sequence', 'Sequence'], ['activity', 'Activity'],
-  ['er', 'Entity relationship'], ['state', 'State'], ['component', 'Component'], ['deployment', 'Deployment'],
+  ['er', 'Entity relationship'], ['state', 'State'], ['context', 'Context'], ['swimlane', 'Swimlane'],
+  ['crc', 'CRC cards'], ['dfd', 'Data flow'], ['component', 'Component'], ['deployment', 'Deployment'],
 ];
 
 let mermaidLib = null;
@@ -597,14 +615,15 @@ async function renderUML() {
     }
     throw err;
   }
-  const { mermaid } = diagramData;
+  const { mermaid, recipe } = diagramData;
   el('view').innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h3 style="margin:0">${DIAGRAMS.find(([t]) => t === umlType)[1]} diagram</h3>
         <button class="btn small" id="copyMermaid">Copy Mermaid source</button>
       </div>
-      <p class="muted" style="margin:0 0 12px">Generated from the selected project's actors, requirements and quality concerns.</p>
+      <p class="muted" style="margin:0 0 12px">${esc(recipe?.purpose || "Generated from this project's requirements and domain vocabulary.")}</p>
+      ${recipe ? `<div class="issues" style="margin-bottom:12px"><strong>Pattern:</strong> ${esc(recipe.rule)} &nbsp; <strong>Inputs:</strong> ${recipe.inputs.map(esc).join(' · ')}</div>` : ''}
       <div class="mermaid-box" id="diagram"><span class="muted">Rendering…</span></div>
     </div>
     <div class="card">
@@ -1084,6 +1103,18 @@ async function renderTeam() {
 // -------------------------------------------------------------- start -----
 
 (async function init() {
+  const callbackParams = new URLSearchParams(location.hash.slice(1));
+  const socialToken = callbackParams.get('auth_token');
+  const socialError = callbackParams.get('auth_error');
+  if (socialToken) {
+    token.set(socialToken);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  if (socialError) {
+    el('authError').textContent = socialError;
+    el('authError').classList.remove('hidden');
+    history.replaceState(null, '', location.pathname + location.search);
+  }
   if (!token.get()) return;
   try {
     const { user } = await api.get('/auth/me');

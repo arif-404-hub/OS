@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { all, get } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { loadProject } from './projects.js';
-import { generateUML, reviewCode, detectConflicts } from '../ai.js';
+import { generateUML, UML_RECIPES, reviewCode, detectConflicts } from '../ai.js';
 import { projectRequirements } from './requirements.js';
 import { buildSRS, buildUniversitySRS, renderSRSHtml, renderSRSMarkdown, renderUniversitySRSHtml, renderUniversitySRSMarkdown } from '../srs.js';
 import { getProjectContext } from '../project-context.js';
@@ -13,7 +13,8 @@ router.use(requireAuth, loadProject);
 
 export const DIAGRAM_TYPES = [
   ['usecase', 'Use case'], ['class', 'Class'], ['sequence', 'Sequence'], ['activity', 'Activity'],
-  ['er', 'Entity relationship'], ['state', 'State'], ['component', 'Component'], ['deployment', 'Deployment'],
+  ['er', 'Entity relationship'], ['state', 'State'], ['context', 'Context'], ['swimlane', 'Swimlane'],
+  ['crc', 'CRC cards'], ['dfd', 'Data flow'], ['component', 'Component'], ['deployment', 'Deployment'],
 ];
 
 router.get('/uml/:type', (req, res) => {
@@ -25,7 +26,7 @@ router.get('/uml/:type', (req, res) => {
     return res.status(409).json({ error: 'Generate requirements first.', context });
   }
   const mermaid = generateUML(req.params.type, req.project, context.generatedRequirements);
-  res.json({ type: req.params.type, mermaid, context });
+  res.json({ type: req.params.type, recipe: UML_RECIPES[req.params.type], mermaid, context });
 });
 
 // Requirement -> user story -> task -> bug, end to end.

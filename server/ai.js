@@ -273,6 +273,23 @@ export function detectConflicts(requirements) {
 
 // ---------------------------------------------------------------- UML ------
 
+// The diagram set is a repeatable design system. Project requirements provide
+// the vocabulary; these recipes keep the meaning and structure consistent.
+export const UML_RECIPES = {
+  usecase: { name: 'Use case', purpose: 'Define who uses the system and what goals they achieve.', inputs: ['actors', 'functional requirements'], rule: 'actor -> system goal' },
+  class: { name: 'Class', purpose: 'Model domain objects, attributes, operations, and relationships.', inputs: ['domain entities', 'functional requirements'], rule: 'entity -> attributes and operations' },
+  sequence: { name: 'Sequence', purpose: 'Show the order of messages across a user workflow.', inputs: ['actor', 'functional requirements', 'system boundaries'], rule: 'actor -> interface -> service -> data' },
+  activity: { name: 'Activity', purpose: 'Show workflow steps, decisions, validation, and completion.', inputs: ['functional requirements', 'acceptance criteria'], rule: 'start -> actions -> decision -> end' },
+  er: { name: 'Entity relationship', purpose: 'Describe persistent data entities and their cardinality.', inputs: ['domain entities', 'traceability data'], rule: 'entity 1 -> many related entities' },
+  state: { name: 'State', purpose: 'Show the lifecycle and transitions of the project domain.', inputs: ['functional requirements', 'status words'], rule: 'state -> transition -> state' },
+  context: { name: 'Context', purpose: 'Define the system boundary and external actors or systems.', inputs: ['actors', 'project name', 'functional requirements'], rule: 'external actor <-> system' },
+  swimlane: { name: 'Swimlane', purpose: 'Assign workflow responsibility to actors, system areas, and data objects.', inputs: ['actors', 'entities', 'functional requirements'], rule: 'responsibility lane -> next responsibility lane' },
+  crc: { name: 'CRC cards', purpose: 'Explore candidate classes through responsibilities and collaborators.', inputs: ['domain entities', 'functional requirements'], rule: 'class -> responsibility -> collaborator' },
+  dfd: { name: 'Data flow', purpose: 'Show how information enters, moves through processes, and is stored.', inputs: ['actors', 'functional requirements', 'domain entities'], rule: 'source -> process -> data store' },
+  component: { name: 'Component', purpose: 'Show logical software modules and quality concerns.', inputs: ['project type', 'non-functional requirements'], rule: 'client -> service -> quality concern -> data' },
+  deployment: { name: 'Deployment', purpose: 'Show runtime nodes, application boundaries, and storage.', inputs: ['project type', 'system architecture'], rule: 'client node -> application node -> storage node' },
+};
+
 function entityWords(requirements) {
   const counts = new Map();
   const skip = new Set(['system', 'shall', 'must', 'should', 'will', 'user', 'able', 'with', 'from',
@@ -296,6 +313,25 @@ function requirementActors(requirements) {
   return [...new Set(actors)].slice(0, 5);
 }
 
+function requirementActions(requirements) {
+  const actions = requirements
+    .filter((r) => r.kind === 'functional')
+    .map((r) => clean(r.title || r.description))
+    .filter(Boolean);
+  return [...new Set(actions)].slice(0, 8);
+}
+
+function diagramVocabulary(project, requirements) {
+  const actions = requirementActions(requirements);
+  const actors = requirementActors(requirements);
+  const entities = entityWords(requirements.length ? requirements : [{ description: project.description }]);
+  return {
+    actions: actions.length ? actions : ['Manage project workflow'],
+    actors: actors.length ? actors : ['user'],
+    entities,
+  };
+}
+
 const clean = (s) => String(s ?? '').replace(/["`\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 55);
 const mermaidId = (s, fallback = 'Node') => {
   const id = String(s ?? '').replace(/[^A-Za-z0-9_]/g, '').replace(/^[^A-Za-z_]+/, '');
@@ -305,14 +341,15 @@ const mermaidLabel = (s) => clean(s).replace(/[()[\]{}<>]/g, ' ');
 
 /**
  * Generate Mermaid source for a diagram type from the project's requirements.
- * @param {string} type usecase|class|sequence|activity|er|state|component|deployment
+ * @param {string} type one of the keys in UML_RECIPES
  */
 export function generateUML(type, project, requirements) {
   const fr = requirements.filter((r) => r.kind === 'functional');
   const top = (fr.length ? fr : [{ code: 'FR-001', title: 'Core feature' }]).slice(0, 8);
-  const entities = entityWords(requirements.length ? requirements : [{ description: project.description }]);
-  const roles = requirementActors(requirements);
-  const actors = roles.length ? roles : ['user'];
+  const vocabulary = diagramVocabulary(project, requirements);
+  const { entities, actors } = vocabulary;
+  const roles = actors;
+  const actions = vocabulary.actions;
   const short = (s) => mermaidId(s, 'Actor');
 
   switch (type) {
@@ -332,13 +369,13 @@ export function generateUML(type, project, requirements) {
         const classNames = [...new Set(entities.map((entity, i) => mermaidId(entity, `Entity${i + 1}`)))];
       return [
         'classDiagram',
-        ...classNames.map((e) => [
+        ...classNames.map((e, i) => [
           `  class ${e} {`,
           '    +int id',
           '    +String name',
           '    +Date createdAt',
-          `    +save() ${e}`,
-          '    +delete() void',
+          `    +${mermaidId(actions[i % actions.length], 'manage')}() ${e}`,
+          '    +update() void',
           '  }',
         ].join('\n')),
         ...classNames.slice(1).map((e) => `  ${classNames[0]} "1" --> "*" ${e}`),
@@ -366,18 +403,15 @@ export function generateUML(type, project, requirements) {
 
     case 'activity':
       {
-        const steps = top.slice(0, 5);
+        const steps = actions.slice(0, 5);
       return [
         'flowchart TD',
-        '  S([Start]) --> L[Sign in]',
-        '  L --> V{Credentials valid?}',
-        '  V -- No --> E[Show error] --> L',
-        '  V -- Yes --> P[Open project]',
-        ...steps.map((r, i) => `  P --> T${i}["${mermaidLabel(r.title)}"] --> R${i}`),
+        '  S([Start]) --> P[Open project]',
+        ...steps.map((step, i) => `  P --> T${i}["${mermaidLabel(step)}"] --> R${i}`),
         ...steps.slice(0, -1).map((_, i) => `  R${i} --> T${i + 1}`),
         `  R${Math.max(0, steps.length - 1)} --> V2{Validation passed?}`,
         '  V2 -- No --> F[Return issues] --> P',
-        '  V2 -- Yes --> C[Persist and log activity]',
+        '  V2 -- Yes --> C[Complete workflow]',
         '  C --> D([End])',
       ].join('\n');
       }
@@ -434,14 +468,49 @@ export function generateUML(type, project, requirements) {
     case 'state':
       return [
         'stateDiagram-v2',
-        '  [*] --> Backlog',
-        '  Backlog --> Todo : planned into sprint',
-        '  Todo --> InProgress : developer starts',
-        '  InProgress --> Review : pull request opened',
-        '  Review --> InProgress : changes requested',
-        '  Review --> Done : approved and merged',
-        '  Done --> InProgress : bug reopened',
-        '  Done --> [*]',
+        '  [*] --> Start',
+        ...actions.slice(0, 6).map((action, i) => `  ${i ? `S${i - 1}` : 'Start'} --> S${i} : ${mermaidLabel(action)}`),
+        `  S${Math.max(0, Math.min(5, actions.length - 1))} --> [*]`,
+      ].join('\n');
+
+    case 'context':
+      return [
+        'flowchart LR',
+        `  C(("${mermaidLabel(project.name)}"))`,
+        ...actors.map((actor, i) => `  E${i}["${mermaidLabel(actor)}"] -->|${mermaidLabel(actions[i % actions.length])}| C`),
+        ...actors.map((actor, i) => `  C -->|response and status| E${i}`),
+      ].join('\n');
+
+    case 'swimlane':
+      {
+        const lanes = [...actors, mermaidLabel(project.name), ...entities.slice(0, 2)];
+        const laneSteps = actions.slice(0, Math.max(3, Math.min(6, actions.length)));
+        return [
+          'flowchart LR',
+          ...lanes.map((lane, i) => `  subgraph L${i}["${mermaidLabel(lane)}"]\n    L${i}S["${mermaidLabel(laneSteps[i % laneSteps.length])}"]\n  end`),
+          ...lanes.slice(0, -1).map((_, i) => `  L${i}S --> L${i + 1}S`),
+        ].join('\n');
+      }
+
+    case 'crc':
+      return [
+        'classDiagram',
+        ...entities.slice(0, 6).map((entity, i) => {
+          const name = mermaidId(entity, `Entity${i + 1}`);
+          const responsibilities = actions.slice(i % 2, (i % 2) + 2);
+          return [`  class ${name} {`, ...responsibilities.map((action) => `    +${mermaidId(action, 'manage')}()`), '  }'].join('\n');
+        }),
+        ...entities.slice(1, 6).map((entity, i) => `  ${mermaidId(entities[0], 'Entity1')} --> ${mermaidId(entity, `Entity${i + 2}`)}`),
+      ].join('\n');
+
+    case 'dfd':
+      return [
+        'flowchart LR',
+        ...actors.map((actor, i) => `  A${i}["${mermaidLabel(actor)}"]`),
+        ...actions.slice(0, 6).map((action, i) => `  P${i}("${i + 1}. ${mermaidLabel(action)}")`),
+        ...entities.slice(0, Math.min(6, actions.length + 1)).map((entity, i) => `  D${i}[("${mermaidLabel(entity)} data")]`),
+        ...actions.slice(0, 6).map((_, i) => `  ${i ? `P${i - 1}` : `A${i % actors.length}`} -->|request or input| P${i}`),
+        ...actions.slice(0, 6).map((_, i) => `  P${i} -->|save or update| D${i % Math.max(1, Math.min(6, actions.length + 1))}`),
       ].join('\n');
 
     case 'component':

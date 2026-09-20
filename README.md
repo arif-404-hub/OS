@@ -21,6 +21,22 @@ Then open <http://localhost:3000> and sign in with:
 | --- | --- |
 | `demo@engineeros.dev` | `demo1234` |
 
+### Google and GitHub sign-in
+
+Email/password login works without configuration. To enable social login, copy `.env.example`
+to `.env`, add OAuth credentials, and restart the server. Register these callback URLs in each
+provider application:
+
+```text
+http://localhost:3000/api/auth/google/callback
+http://localhost:3000/api/auth/github/callback
+```
+
+Use `APP_URL` for a deployed hostname. Google requires the `openid`, `email`, and `profile`
+scopes; GitHub requires access to the user's email address. Social accounts are linked to an
+existing EngineerOS account when the verified email matches, otherwise a Developer account is
+created automatically.
+
 `npm run seed` is optional — it creates a demo project with 11 requirements, 11 tasks and
 4 defects so every screen has something in it. Without it you start from an empty account.
 
@@ -37,7 +53,7 @@ The only npm dependency is Express.
 | **Requirement engineering** | Paste a brief; the engine splits it into statements, classifies each as functional or non-functional (Performance, Security, Reliability, Usability, Scalability, Maintainability, Portability), writes a user story and Given/When/Then acceptance criteria, flags vague wording, and scores each requirement 0–100 for testability. |
 | **Conflict detection** | Finds requirements that overlap or contradict each other. |
 | **SRS generator** | Choose an IEEE-830 specification or a university project format with title, team, abstract, chapters, analysis, design placeholders and references; view in-app and export as HTML, Markdown or PDF (via print). |
-| **UML generator** | Eight diagram types — use case, class, sequence, activity, ER, state, component, deployment — emitted as Mermaid and rendered in the browser. |
+| **UML generator** | Twelve recipe-driven diagram types — use case, class, sequence, activity, ER, state, context, swimlane, CRC, DFD, component and deployment — with consistent purpose and structure, populated from each project's requirements. |
 | **Sprint board** | Kanban with drag-and-drop across five columns, story points, assignees, and a link from each task back to its requirement. |
 | **Bug tracker** | Severity levels, status workflow, task linking, and duplicate detection on report. |
 | **Traceability** | The full chain: requirement → user story → task → defect, with coverage percentages and a list of untraced tasks. |
@@ -123,7 +139,7 @@ GET    /api/projects/:id/bugs              POST /api/projects/:id/bugs
 PATCH  /api/projects/:id/bugs/:bid         DELETE /api/projects/:id/bugs/:bid
 
 GET    /api/projects/:id/srs               (?format=markdown, ?download=1)
-GET    /api/projects/:id/uml/:type         (usecase|class|sequence|activity|er|state|component|deployment)
+GET    /api/projects/:id/uml/:type         (usecase|class|sequence|activity|er|state|context|swimlane|crc|dfd|component|deployment)
 GET    /api/projects/:id/traceability
 GET    /api/projects/:id/analytics
 POST   /api/projects/:id/review            POST /api/projects/:id/ask

@@ -1,8 +1,97 @@
 import { Router } from 'express';
+import { randomBytes } from 'node:crypto';
 import { all, get, run } from '../db.js';
 import { hashPassword, verifyPassword, issueToken, requireAuth, ROLES } from '../auth.js';
 
 export const router = Router();
+
+const OAUTH_PROVIDERS = new Set(['google', 'github']);
+const oauthStates = new Map();
+const appUrl = () => (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+function providerSettings(provider) {
+  const settings = provider === 'google'
+    ? { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET, authorize: 'https://accounts.google.com/o/oauth2/v2/auth', token: 'https://oauth2.googleapis.com/token', scope: 'openid email profile' }
+    : { clientId: process.env.GITHUB_CLIENT_ID, clientSecret: process.env.GITHUB_CLIENT_SECRET, authorize: 'https://github.com/login/oauth/authorize', token: 'https://github.com/login/oauth/access_token', scope: 'read:user user:email' };
+  return { ...settings, redirect: `${appUrl()}/api/auth/${provider}/callback` };
+}
+
+function configured(provider) {
+  const settings = providerSettings(provider);
+  return Boolean(settings.clientId && settings.clientSecret);
+}
+
+function oauthRedirect(params) {
+  return `${appUrl()}/#${new URLSearchParams(params)}`;
+}
+
+function socialUser(provider, profile) {
+  const providerId = String(profile.id || profile.sub || '');
+  const email = String(profile.email || '').trim().toLowerCase();
+  if (!providerId || !email) throw new Error('The provider did not return a verified email address.');
+
+  const linked = get('SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?', provider, providerId);
+  let user = linked
+    ? get('SELECT id, name, email, role FROM users WHERE id = ?', linked.user_id)
+    : get('SELECT id, name, email, role FROM users WHERE email = ?', email);
+  if (!user) {
+    const name = String(profile.name || profile.login || email.split('@')[0]).trim().slice(0, 120) || 'EngineerOS user';
+    const { lastInsertRowid } = run('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)', name, email, hashPassword(randomBytes(32).toString('hex')), 'DEVELOPER');
+    user = get('SELECT id, name, email, role FROM users WHERE id = ?', lastInsertRowid);
+  }
+  if (!linked) run('INSERT INTO oauth_accounts (user_id, provider, provider_user_id) VALUES (?, ?, ?)', user.id, provider, providerId);
+  return user;
+}
+
+router.get('/providers', (_req, res) => res.json({ google: configured('google'), github: configured('github') }));
+
+router.get('/:provider', (req, res) => {
+  const provider = req.params.provider;
+  if (!OAUTH_PROVIDERS.has(provider)) return res.status(404).json({ error: 'Unknown authentication provider.' });
+  if (!configured(provider)) return res.status(503).json({ error: `${provider} login is not configured on this server.` });
+  const state = randomBytes(24).toString('hex');
+  oauthStates.set(state, { provider, expires: Date.now() + 10 * 60 * 1000 });
+  const settings = providerSettings(provider);
+  const params = { client_id: settings.clientId, redirect_uri: settings.redirect, response_type: 'code', scope: settings.scope, state };
+  res.redirect(`${settings.authorize}?${new URLSearchParams(params)}`);
+});
+
+router.get('/:provider/callback', async (req, res) => {
+  const provider = req.params.provider;
+  const saved = oauthStates.get(req.query.state);
+  oauthStates.delete(req.query.state);
+  if (!OAUTH_PROVIDERS.has(provider) || !saved || saved.provider !== provider || saved.expires < Date.now()) {
+    return res.redirect(oauthRedirect({ auth_error: 'Invalid or expired social login session.' }));
+  }
+  if (req.query.error) return res.redirect(oauthRedirect({ auth_error: 'Social login was cancelled.' }));
+
+  try {
+    const settings = providerSettings(provider);
+    const tokenResponse = await fetch(settings.token, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: settings.clientId, client_secret: settings.clientSecret, code: req.query.code, redirect_uri: settings.redirect }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error('The provider did not issue an access token.');
+    const headers = { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json', 'User-Agent': 'EngineerOS' };
+    const profileResponse = await fetch(provider === 'google' ? 'https://openidconnect.googleapis.com/v1/userinfo' : 'https://api.github.com/user', { headers, signal: AbortSignal.timeout(15000) });
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok) throw new Error('Could not read the social account profile.');
+    if (provider === 'google' && profile.email_verified !== true) throw new Error('Google did not verify this email address.');
+    if (provider === 'github') {
+      const emailsResponse = await fetch('https://api.github.com/user/emails', { headers, signal: AbortSignal.timeout(15000) });
+      const emails = await emailsResponse.json();
+      if (!emailsResponse.ok) throw new Error('Could not read the GitHub account email addresses.');
+      profile.email = emails.find((email) => email.primary && email.verified)?.email || emails.find((email) => email.verified)?.email;
+    }
+    const user = socialUser(provider, profile);
+    return res.redirect(oauthRedirect({ auth_token: issueToken(user) }));
+  } catch (error) {
+    return res.redirect(oauthRedirect({ auth_error: error.message || 'Social login failed.' }));
+  }
+});
 
 router.post('/register', (req, res) => {
   const name = String(req.body.name || '').trim();
