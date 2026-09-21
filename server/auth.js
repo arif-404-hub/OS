@@ -4,6 +4,7 @@ import { get } from './db.js';
 
 const SECRET = process.env.JWT_SECRET || 'engineeros-dev-secret-change-me';
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 export const ROLES = ['ADMIN', 'PM', 'DEVELOPER', 'TESTER', 'DESIGNER', 'CLIENT'];
 
@@ -22,6 +23,22 @@ export function verifyPassword(plain, stored) {
 
 const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
 const sign = (body) => createHmac('sha256', SECRET).update(body).digest('base64url');
+
+export function issueOAuthState(provider) {
+  const body = b64({ provider, nonce: randomBytes(24).toString('base64url'), exp: Date.now() + OAUTH_STATE_TTL_MS });
+  return `${body}.${sign(body)}`;
+}
+
+export function readOAuthState(state, expectedProvider) {
+  const [body, signature] = String(state || '').split('.');
+  if (!body || !signature || sign(body) !== signature) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+    return payload.provider === expectedProvider && payload.exp > Date.now() ? payload : null;
+  } catch {
+    return null;
+  }
+}
 
 export function issueToken(user) {
   const body = b64({ id: user.id, email: user.email, role: user.role, exp: Date.now() + TOKEN_TTL_MS });

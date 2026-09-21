@@ -27,6 +27,18 @@ Then open <http://localhost:3000> and sign in with:
 Requires **Node.js 22 or newer** (it uses the built-in `node:sqlite` driver).
 The only npm dependency is Express.
 
+### Google and GitHub sign-in
+
+The Google and GitHub buttons use OAuth 2.0. Copy `.env.example` to `.env` (or set the
+variables in your hosting provider), then create OAuth apps with these exact callback URLs:
+
+- Google: `${APP_URL}/api/auth/google/callback`
+- GitHub: `${APP_URL}/api/auth/github/callback`
+
+Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, and
+`GITHUB_CLIENT_SECRET` in `.env`, then restart the server. OAuth accounts are linked by their verified
+email address; new users receive the default `DEVELOPER` role.
+
 ---
 
 ## What it does

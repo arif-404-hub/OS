@@ -39,6 +39,27 @@ const emptyState = (icon, text) => `<div class="empty"><div class="big">${icon}<
 
 // ------------------------------------------------------------ sign in -----
 
+function processOAuthResult() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const oauthToken = params.get('oauth_token');
+  const oauthError = params.get('oauth_error');
+  if (!oauthToken && !oauthError) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  if (oauthToken) token.set(oauthToken);
+  if (oauthError) {
+    el('authError').textContent = oauthError;
+    el('authError').classList.remove('hidden');
+  }
+}
+
+document.querySelectorAll('[data-oauth-provider]').forEach((button) => {
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    const base = location.pathname.startsWith('/OS') ? '/OS/api' : '/api';
+    location.assign(`${base}/auth/${button.dataset.oauthProvider}`);
+  });
+});
+
 let authMode = 'login';
 
 function setAuthMode(mode) {
@@ -1378,6 +1399,20 @@ const chatLog = [];
 
 async function renderAssistant() {
   el('view').innerHTML = `
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="panel-heading"><h3><span class="panel-icon blue">✦</span> Project queries</h3></div>
+        <p class="muted">Ask questions in plain English and get answers from this project's live requirements, work, defects and risks.</p>
+      </div>
+      <div class="card">
+        <div class="panel-heading"><h3><span class="panel-icon violet">▤</span> Team intelligence</h3></div>
+        <p class="muted">Turn meeting notes into decisions, action items and blockers, or generate a shareable weekly delivery report.</p>
+        <div class="row" style="margin-top:12px">
+          <button class="btn small" id="meetingSummaryBtn">Summarize meeting</button>
+          <button class="btn small primary" id="weeklyReportBtn">Generate weekly report</button>
+        </div>
+      </div>
+    </div>
     <div class="card">
       <div class="chat" id="chat">
         ${chatLog.length ? chatLog.map((m) => `<div class="msg ${m.role}">${esc(m.text)}</div>`).join('')
@@ -1392,6 +1427,59 @@ async function renderAssistant() {
           .map((q) => `<button class="btn small" data-q="${esc(q)}">${esc(q)}</button>`).join('')}
       </div>
     </div>`;
+
+  el('meetingSummaryBtn').addEventListener('click', () => {
+    openModal('Summarize a meeting', `
+      <p class="muted" style="margin-top:0">Paste notes or a transcript. The summary stays scoped to this project and is generated locally.</p>
+      <div class="field"><label for="meetingTranscript">Meeting notes</label><textarea id="meetingTranscript" rows="10" placeholder="Decided to ship the import flow on Friday. Alex will add coverage. Blocked on API credentials..."></textarea></div>
+      <p class="error hidden" id="meetingError"></p>
+      <button class="btn primary block" id="meetingGenerate">Generate summary</button>
+    `, () => {
+      el('meetingTranscript').focus();
+      el('meetingGenerate').addEventListener('click', async () => {
+        const button = el('meetingGenerate');
+        button.disabled = true;
+        try {
+          const summary = await api.post(`${P()}/meeting-summary`, { transcript: el('meetingTranscript').value });
+          closeModal();
+          openModal('Meeting summary', `
+            <div class="finding"><strong>Summary</strong><p>${esc(summary.summary)}</p></div>
+            <h4>Decisions</h4><ul>${summary.decisions.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>
+            <h4>Action items</h4><ul>${summary.actionItems.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>
+            <h4>Blockers and risks</h4><ul>${summary.blockers.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>
+          `);
+        } catch (err) {
+          el('meetingError').textContent = err.message;
+          el('meetingError').classList.remove('hidden');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+  });
+
+  el('weeklyReportBtn').addEventListener('click', async () => {
+    const button = el('weeklyReportBtn');
+    button.disabled = true;
+    try {
+      const report = await api.get(`${P()}/weekly-report`);
+      openModal(`Weekly report · ${report.project}`, `
+        <p class="muted">${esc(report.period)} · Generated ${esc(new Date(report.generatedAt).toLocaleString())}</p>
+        <div class="grid cols-3">
+          <div class="stat"><div class="value">${report.metrics.completedTasks}</div><div class="sub">completed tasks</div></div>
+          <div class="stat"><div class="value">${report.metrics.completedPoints}</div><div class="sub">story points delivered</div></div>
+          <div class="stat"><div class="value">${report.metrics.openBugs}</div><div class="sub">open defects</div></div>
+        </div>
+        <h4>Highlights</h4><ul>${report.highlights.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>
+        <h4>Risks</h4><ul>${report.risks.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>
+        <h4>Next steps</h4><ul>${report.nextSteps.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>
+      `);
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   // Append to the existing chat rather than re-rendering the whole view,
   // which would re-bind the listeners below.
@@ -1550,6 +1638,7 @@ async function renderTeam() {
 // -------------------------------------------------------------- start -----
 
 (async function init() {
+  processOAuthResult();
   if (!token.get()) return;
   try {
     const { user } = await api.get('/auth/me');
