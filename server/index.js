@@ -8,6 +8,7 @@ import { router as projectsRouter } from './routes/projects.js';
 import { router as requirementsRouter } from './routes/requirements.js';
 import { router as workRouter } from './routes/work.js';
 import { router as intelRouter } from './routes/intel.js';
+import { router as githubRouter } from './routes/github.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -23,6 +24,7 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/projects/:pid/requirements', requirementsRouter);
 app.use('/api/projects/:pid', workRouter);
 app.use('/api/projects/:pid', intelRouter);
+app.use('/api/projects/:pid/github', githubRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Unknown API endpoint.' }));
 

@@ -47,9 +47,14 @@ router.post('/', (req, res) => {
   if (name.length < 2) return res.status(400).json({ error: 'Project name must be at least 2 characters.' });
   if (description.length < 20) return res.status(400).json({ error: 'Project description must be at least 20 characters.' });
 
+  const rawRepo = String(req.body.github_repo || '').trim()
+    .replace(/^https?:\/\/github\.com\//i, '')
+    .replace(/\.git$/i, '');
+  const githubToken = String(req.body.github_token || '').trim();
+
   const { lastInsertRowid } = run(
-    'INSERT INTO projects (name, description, project_type, owner_id) VALUES (?, ?, ?, ?)',
-    name, description, String(req.body.project_type || '').trim(), req.user.id
+    'INSERT INTO projects (name, description, project_type, github_repo, github_token, owner_id) VALUES (?, ?, ?, ?, ?, ?)',
+    name, description, String(req.body.project_type || '').trim(), rawRepo, githubToken, req.user.id
   );
   run('INSERT INTO members (project_id, user_id, role) VALUES (?, ?, ?)', lastInsertRowid, req.user.id, req.user.role);
   run('INSERT INTO sprints (project_id, name) VALUES (?, ?)', lastInsertRowid, 'Sprint 1');
@@ -61,7 +66,7 @@ router.post('/', (req, res) => {
 router.get('/:pid', loadProject, (req, res) => {
   res.json({
     ...req.project,
-    members: all(`SELECT u.id, u.name, u.email, m.role FROM members m
+    members: all(`SELECT u.id, u.name, u.email, u.github_username, m.role FROM members m
                   JOIN users u ON u.id = m.user_id WHERE m.project_id = ?`, req.project.id),
     sprints: all('SELECT * FROM sprints WHERE project_id = ? ORDER BY id', req.project.id),
     activity: all(`SELECT a.message, a.created_at, u.name AS user FROM activity a
@@ -76,10 +81,19 @@ router.patch('/:pid', loadProject, (req, res) => {
   }
   const description = String(req.body.description ?? req.project.description).trim();
   if (description.length < 20) return res.status(400).json({ error: 'Project description must be at least 20 characters.' });
-  run('UPDATE projects SET name = ?, description = ?, project_type = ? WHERE id = ?',
+  const githubRepo = req.body.github_repo !== undefined
+    ? String(req.body.github_repo).trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '')
+    : req.project.github_repo;
+  const githubToken = req.body.github_token !== undefined
+    ? String(req.body.github_token).trim()
+    : req.project.github_token;
+
+  run('UPDATE projects SET name = ?, description = ?, project_type = ?, github_repo = ?, github_token = ? WHERE id = ?',
     String(req.body.name ?? req.project.name).trim(),
     description,
     String(req.body.project_type ?? req.project.project_type ?? '').trim(),
+    githubRepo,
+    githubToken,
     req.project.id);
   res.json(get('SELECT * FROM projects WHERE id = ?', req.project.id));
 });

@@ -202,6 +202,7 @@ const VIEW_META = {
   bugs: ['Bug tracker', 'Defects by severity, with duplicate detection'],
   trace: ['Traceability', 'Requirement to story to task to defect, end to end'],
   review: ['AI code review', 'Static analysis for smells, security and complexity'],
+  github: ['GitHub Integration', 'Repositories, Commits, Pull Requests, Issues and CI/CD Actions'],
   assistant: ['Assistant', 'Ask questions about this project in plain English'],
   team: ['Team', 'Members, roles and recent activity'],
 };
@@ -215,6 +216,7 @@ const VIEWS = {
   bugs: renderBugs,
   trace: renderTrace,
   review: renderReview,
+  github: renderGitHub,
   assistant: renderAssistant,
   team: renderTeam,
 };
@@ -969,6 +971,999 @@ async function renderReview() {
       button.textContent = 'Review code';
     }
   });
+}
+
+// ------------------------------------------------------------ github ------
+
+let ghTab = 'repos';
+let ghBranch = '';
+let ghCommitSearch = '';
+let ghPRState = 'all';
+let ghIssueState = 'all';
+
+function timeAgo(dateInput) {
+  if (!dateInput) return '—';
+  const date = new Date(dateInput);
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 60) return `${Math.max(1, secs)}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+const LANG_COLORS = {
+  JavaScript: '#f1e05a',
+  CSS: '#563d7c',
+  HTML: '#e34c26',
+  Shell: '#89e051',
+  TypeScript: '#3178c6',
+  Python: '#3572A5',
+  Java: '#b07219',
+  Go: '#00ADD8',
+  Rust: '#dea584',
+};
+
+async function renderGitHub() {
+  const [repo, config] = await Promise.all([
+    api.get(`${P()}/github/repo`),
+    api.get(`${P()}/github/config`),
+  ]);
+
+  if (!ghBranch) ghBranch = repo.default_branch || 'main';
+
+  el('topbarActions').innerHTML = `
+    <button class="btn ghost small" id="ghRefreshBtn" title="Refresh GitHub data">↻ Refresh</button>
+    <button class="btn primary small" id="ghConfigBtn">⚙ Configure Repo</button>
+  `;
+
+  el('view').innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="gh-repo-header">
+        <div>
+          <div class="gh-repo-title">
+            <span style="font-size:24px">⌘</span>
+            <a href="${esc(repo.html_url)}" target="_blank" rel="noopener">${esc(repo.full_name || 'arif-404-hub/OS')}</a>
+            <span class="pill ${repo.private ? 'amber' : 'green'}">${repo.private ? 'Private' : 'Public'}</span>
+            <span class="pill blue">${repo.isLive ? 'Live API' : 'Cached / Fallback'}</span>
+          </div>
+          <p class="muted" style="margin:6px 0 0;font-size:13.5px">${esc(repo.description || 'No repository description.')}</p>
+        </div>
+        <div class="row">
+          <a class="btn small" href="${esc(repo.html_url)}" target="_blank" rel="noopener">↗ Open GitHub</a>
+        </div>
+      </div>
+
+      <div class="gh-stat-bar">
+        <div class="gh-stat-chip"><span>Stars</span><strong>${repo.stargazers_count || 0}</strong></div>
+        <div class="gh-stat-chip"><span>Forks</span><strong>${repo.forks_count || 0}</strong></div>
+        <div class="gh-stat-chip"><span>Watchers</span><strong>${repo.watchers_count || 0}</strong></div>
+        <div class="gh-stat-chip"><span>Default Branch</span><strong>${esc(repo.default_branch || 'main')}</strong></div>
+        <div class="gh-stat-chip"><span>Open PRs</span><strong>${repo.open_prs_count || 1}</strong></div>
+        <div class="gh-stat-chip"><span>Open Issues</span><strong>${repo.open_issues_count || 0}</strong></div>
+      </div>
+
+      <div class="gh-subnav" id="ghSubNav">
+        <button class="gh-tab ${ghTab === 'repos' ? 'active' : ''}" data-tab="repos">◫ Repositories</button>
+        <button class="gh-tab ${ghTab === 'commits' ? 'active' : ''}" data-tab="commits">⌥ Commits</button>
+        <button class="gh-tab ${ghTab === 'pulls' ? 'active' : ''}" data-tab="pulls">⑂ Pull Requests <span class="gh-tab-badge">${repo.open_prs_count || 1}</span></button>
+        <button class="gh-tab ${ghTab === 'issues' ? 'active' : ''}" data-tab="issues">⬤ Issues <span class="gh-tab-badge">${repo.open_issues_count || 4}</span></button>
+        <button class="gh-tab ${ghTab === 'actions' ? 'active' : ''}" data-tab="actions">⚡ GitHub Actions</button>
+      </div>
+
+      <div id="ghTabContent">
+        <div class="empty"><span class="spinner"></span></div>
+      </div>
+    </div>
+  `;
+
+  // Bind topbar actions
+  el('ghRefreshBtn')?.addEventListener('click', () => renderGitHub());
+  el('ghConfigBtn')?.addEventListener('click', () => openGHConfigModal(config));
+
+  // Bind subnav tabs
+  el('ghSubNav')?.addEventListener('click', (e) => {
+    const tabBtn = e.target.closest('[data-tab]');
+    if (!tabBtn) return;
+    ghTab = tabBtn.dataset.tab;
+    document.querySelectorAll('.gh-tab').forEach((t) => t.classList.toggle('active', t === tabBtn));
+    renderGHTabContent(repo, config);
+  });
+
+  await renderGHTabContent(repo, config);
+}
+
+async function renderGHTabContent(repo, config) {
+  const container = el('ghTabContent');
+  if (!container) return;
+  container.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+
+  try {
+    if (ghTab === 'repos') {
+      await renderGHReposTab(container, repo, config);
+    } else if (ghTab === 'commits') {
+      await renderGHCommitsTab(container, repo);
+    } else if (ghTab === 'pulls') {
+      await renderGHPullsTab(container, repo);
+    } else if (ghTab === 'issues') {
+      await renderGHIssuesTab(container, repo);
+    } else if (ghTab === 'actions') {
+      await renderGHActionsTab(container, repo);
+    }
+  } catch (err) {
+    container.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
+}
+
+// --------------------------------------------------- sub-tab: repositories -
+async function renderGHReposTab(container, repo, config) {
+  const branches = await api.get(`${P()}/github/branches`).catch(() => []);
+  const langs = repo.languages || { JavaScript: 100 };
+  const totalPercent = Object.values(langs).reduce((s, v) => s + v, 0) || 1;
+
+  container.innerHTML = `
+    <div class="grid cols-2" style="align-items:start">
+      <div class="card" style="margin-top:0">
+        <h3>Repository Information</h3>
+        <table><tbody>
+          <tr><th style="width:130px">Repository</th><td><strong>${esc(repo.full_name)}</strong></td></tr>
+          <tr><th>Description</th><td>${esc(repo.description || '—')}</td></tr>
+          <tr><th>Visibility</th><td><span class="pill ${repo.private ? 'amber' : 'green'}">${repo.private ? 'Private' : 'Public'}</span></td></tr>
+          <tr><th>Default Branch</th><td><code>${esc(repo.default_branch || 'main')}</code></td></tr>
+          <tr><th>License</th><td>${esc(repo.license?.name || 'MIT License')}</td></tr>
+          <tr><th>Last Updated</th><td>${esc(timeAgo(repo.updated_at))} (${esc(repo.updated_at ? new Date(repo.updated_at).toLocaleString() : '—')})</td></tr>
+        </tbody></table>
+
+        <h3 style="margin-top:18px">Language Distribution</h3>
+        <div class="gh-lang-bar">
+          ${Object.entries(langs).map(([lang, pct]) => `
+            <i style="width:${(pct / totalPercent) * 100}%;background:${LANG_COLORS[lang] || '#888'}" title="${esc(lang)}: ${pct}%"></i>
+          `).join('')}
+        </div>
+        <div class="gh-lang-legend">
+          ${Object.entries(langs).map(([lang, pct]) => `
+            <span><i class="gh-lang-dot" style="background:${LANG_COLORS[lang] || '#888'}"></i><strong>${esc(lang)}</strong> <span class="muted">${pct}%</span></span>
+          `).join('')}
+        </div>
+
+        <h3 style="margin-top:18px">Clone Repository</h3>
+        <div style="display:grid;gap:8px">
+          <div>
+            <div class="muted" style="font-size:11.5px;margin-bottom:4px;font-weight:600">HTTPS</div>
+            <div class="gh-clone-row">
+              <code>git clone ${esc(repo.clone_url || `https://github.com/${repo.full_name}.git`)}</code>
+              <button class="btn ghost small" data-copy="git clone ${esc(repo.clone_url || `https://github.com/${repo.full_name}.git`)}">Copy</button>
+            </div>
+          </div>
+          <div>
+            <div class="muted" style="font-size:11.5px;margin-bottom:4px;font-weight:600">SSH</div>
+            <div class="gh-clone-row">
+              <code>git clone ${esc(repo.ssh_url || `git@github.com:${repo.full_name}.git`)}</code>
+              <button class="btn ghost small" data-copy="git clone ${esc(repo.ssh_url || `git@github.com:${repo.full_name}.git`)}">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        ${repo.topics && repo.topics.length ? `
+          <h3 style="margin-top:18px">Topics</h3>
+          <div class="row">${repo.topics.map((t) => `<span class="pill blue">${esc(t)}</span>`).join('')}</div>
+        ` : ''}
+      </div>
+
+      <div class="card" style="margin-top:0">
+        <div class="panel-heading">
+          <h3>Branches (${branches.length})</h3>
+          <span class="muted" style="font-size:12px">Default: ${esc(repo.default_branch || 'main')}</span>
+        </div>
+        <table>
+          <thead><tr><th>Branch</th><th>Latest Commit</th><th></th></tr></thead>
+          <tbody>${branches.map((b) => `
+            <tr>
+              <td>
+                <strong>${esc(b.name)}</strong>
+                ${b.name === repo.default_branch ? '<span class="pill green" style="margin-left:6px;font-size:9px">default</span>' : ''}
+                ${b.protected ? '<span class="pill amber" style="margin-left:4px;font-size:9px">protected</span>' : ''}
+              </td>
+              <td>
+                <span class="gh-sha" data-copy="${esc(b.commit?.sha || '')}">${esc((b.commit?.sha || '').slice(0, 7) || 'latest')}</span>
+              </td>
+              <td style="text-align:right">
+                <button class="btn ghost small" data-select-branch="${esc(b.name)}">View Commits →</button>
+              </td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
+
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">
+          <h3>Integration Settings</h3>
+          <p class="muted" style="font-size:13px">Connected repository: <strong>${esc(config.repo)}</strong></p>
+          <p class="muted" style="font-size:13px">Personal access token: <strong>${config.hasToken ? 'Configured (Private repo & write enabled)' : 'None (Using public API / fallback)'}</strong></p>
+          <button class="btn small primary" id="ghReposConfigBtn">Change Repository / Token</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.dataset.copy);
+      toast('Copied to clipboard!');
+    });
+  });
+
+  container.querySelectorAll('[data-select-branch]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ghBranch = btn.dataset.selectBranch;
+      ghTab = 'commits';
+      document.querySelectorAll('.gh-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === 'commits'));
+      renderGHTabContent(repo, config);
+    });
+  });
+
+  container.querySelector('#ghReposConfigBtn')?.addEventListener('click', () => openGHConfigModal(config));
+}
+
+// ------------------------------------------------------- sub-tab: commits -
+async function renderGHCommitsTab(container, repo) {
+  const branches = await api.get(`${P()}/github/branches`).catch(() => []);
+  const branchParam = ghBranch ? `?branch=${encodeURIComponent(ghBranch)}` : '';
+  const searchParam = ghCommitSearch ? `&q=${encodeURIComponent(ghCommitSearch)}` : '';
+  const commits = await api.get(`${P()}/github/commits${branchParam}${searchParam}`).catch(() => []);
+
+  container.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:16px;gap:12px">
+      <div class="row" style="gap:10px;flex:1">
+        <div style="width:200px">
+          <select id="ghBranchSelect">
+            ${branches.map((b) => `<option value="${esc(b.name)}" ${b.name === ghBranch ? 'selected' : ''}>⌥ ${esc(b.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="flex:1;max-width:320px">
+          <input id="ghCommitSearch" placeholder="Search commit message, author, or SHA…" value="${esc(ghCommitSearch)}">
+        </div>
+        ${ghCommitSearch ? '<button class="btn ghost small" id="ghClearSearch">Clear</button>' : ''}
+      </div>
+      <div class="muted" style="font-size:13px;align-self:center">${commits.length} commit${commits.length === 1 ? '' : 's'} found</div>
+    </div>
+
+    <div class="gh-commits-list">
+      ${commits.length ? commits.map((c) => {
+        const shortSha = (c.sha || '').slice(0, 7);
+        const msgLines = (c.commit?.message || '').split('\n');
+        const headline = msgLines[0];
+        const body = msgLines.slice(1).join('\n').trim();
+        const authorName = c.author?.login || c.commit?.author?.name || 'Developer';
+        const avatarUrl = c.author?.avatar_url || '';
+
+        return `
+          <div class="gh-item">
+            <div class="gh-item-main">
+              <div class="gh-item-title">
+                ${avatarUrl ? `<img class="gh-avatar" src="${esc(avatarUrl)}" alt="${esc(authorName)}">`
+                  : `<span class="avatar" style="width:22px;height:22px;font-size:11px">${esc(authorName.charAt(0).toUpperCase())}</span>`}
+                <span>${esc(headline)}</span>
+                ${c.links && c.links.length ? c.links.map((l) => `
+                  <span class="pill blue" title="Linked to SDLC ${esc(l.target_type)}">
+                    🔗 ${esc(l.task_title ? `Task: ${l.task_title}` : l.req_code ? `Req: ${l.req_code}` : l.target_type)}
+                  </span>
+                `).join('') : ''}
+              </div>
+              <div class="gh-item-meta">
+                <strong>${esc(authorName)}</strong>
+                <span>committed ${esc(timeAgo(c.commit?.author?.date))}</span>
+                ${body ? `<span class="muted" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(body)}</span>` : ''}
+              </div>
+            </div>
+            <div class="row" style="gap:8px;flex-shrink:0">
+              <span class="gh-sha" data-copy="${esc(c.sha)}" title="Click to copy full SHA">${esc(shortSha)}</span>
+              <button class="btn ghost small" data-diff-sha="${esc(c.sha)}" data-diff-msg="${esc(headline)}">View diff</button>
+              <button class="btn ghost small" data-link-sha="${esc(shortSha)}" data-link-msg="${esc(headline)}">🔗 Link task</button>
+              <a class="btn ghost small" href="${esc(c.html_url)}" target="_blank" rel="noopener">↗</a>
+            </div>
+          </div>
+        `;
+      }).join('') : emptyState('⌥', 'No commits matched your branch or search filter.')}
+    </div>
+  `;
+
+  // Branch selector
+  el('ghBranchSelect')?.addEventListener('change', (e) => {
+    ghBranch = e.target.value;
+    renderGHTabContent(repo, {});
+  });
+
+  // Search input
+  el('ghCommitSearch')?.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') {
+      ghCommitSearch = e.target.value.trim();
+      renderGHTabContent(repo, {});
+    }
+  });
+
+  el('ghClearSearch')?.addEventListener('click', () => {
+    ghCommitSearch = '';
+    renderGHTabContent(repo, {});
+  });
+
+  // Copy SHA
+  container.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.dataset.copy);
+      toast(`Copied SHA ${btn.dataset.copy.slice(0, 7)}`);
+    });
+  });
+
+  // View diff
+  container.querySelectorAll('[data-diff-sha]').forEach((btn) => {
+    btn.addEventListener('click', () => openCommitDiffModal(btn.dataset.diffSha, btn.dataset.diffMsg));
+  });
+
+  // Link to task/requirement
+  container.querySelectorAll('[data-link-sha]').forEach((btn) => {
+    btn.addEventListener('click', () => openLinkCommitModal(btn.dataset.linkSha, btn.dataset.linkMsg));
+  });
+}
+
+// ------------------------------------------------- sub-tab: pull requests -
+async function renderGHPullsTab(container, repo) {
+  const pulls = await api.get(`${P()}/github/pulls?state=${ghPRState}`).catch(() => []);
+
+  container.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:16px;gap:12px">
+      <div class="row" style="gap:6px">
+        ${['all', 'open', 'closed', 'merged'].map((s) => `
+          <button class="btn small ${ghPRState === s ? 'primary' : 'ghost'}" data-pr-filter="${s}">
+            ${s === 'open' ? '🟢 Open' : s === 'merged' ? '🟣 Merged' : s === 'closed' ? '🔴 Closed' : 'All'}
+          </button>
+        `).join('')}
+      </div>
+      <button class="btn primary small" id="ghNewPRBtn">+ New Pull Request</button>
+    </div>
+
+    <div class="gh-pulls-list">
+      ${pulls.length ? pulls.map((p) => {
+        const statePillClass = p.state === 'merged' ? 'gh-pill-merged' : p.state === 'open' ? 'gh-pill-open' : 'gh-pill-closed';
+        const stateLabel = p.state === 'merged' ? 'Merged' : p.state === 'open' ? 'Open' : 'Closed';
+        const author = p.user?.login || 'Developer';
+        const avatar = p.user?.avatar_url || '';
+
+        return `
+          <div class="gh-item">
+            <div class="gh-item-main">
+              <div class="gh-item-title">
+                <span class="pill ${statePillClass}">${stateLabel}</span>
+                <span class="muted">#${p.number}</span>
+                <strong>${esc(p.title)}</strong>
+                ${(p.labels || []).map((l) => `<span class="pill" style="background:#${l.color}22;color:#${l.color};border-color:#${l.color}55">${esc(l.name)}</span>`).join('')}
+              </div>
+              <div class="gh-item-meta">
+                ${avatar ? `<img class="gh-avatar" src="${esc(avatar)}" alt="${esc(author)}">` : ''}
+                <span>Opened by <strong>${esc(author)}</strong> ${esc(timeAgo(p.created_at))}</span>
+                <span>&bull;</span>
+                <code>${esc(p.base?.ref || 'main')}</code> ⇦ <code>${esc(p.head?.ref || 'feature')}</code>
+                ${p.comments ? `<span>&bull; 💬 ${p.comments} comments</span>` : ''}
+              </div>
+            </div>
+            <div class="row" style="gap:8px;flex-shrink:0">
+              <button class="btn ghost small" data-view-pr="${esc(JSON.stringify(p))}">View Details</button>
+              <a class="btn ghost small" href="${esc(p.html_url)}" target="_blank" rel="noopener">↗ GitHub</a>
+            </div>
+          </div>
+        `;
+      }).join('') : emptyState('⑂', `No ${ghPRState === 'all' ? '' : ghPRState} pull requests found.`)}
+    </div>
+  `;
+
+  // State filter buttons
+  container.querySelectorAll('[data-pr-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ghPRState = btn.dataset.prFilter;
+      renderGHPullsTab(container, repo);
+    });
+  });
+
+  // New PR button
+  container.querySelector('#ghNewPRBtn')?.addEventListener('click', () => openNewPRModal(repo));
+
+  // View details
+  container.querySelectorAll('[data-view-pr]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const pr = JSON.parse(btn.dataset.viewPr);
+      openPRDetailsModal(pr);
+    });
+  });
+}
+
+// ------------------------------------------------------- sub-tab: issues -
+async function renderGHIssuesTab(container, repo) {
+  const issues = await api.get(`${P()}/github/issues?state=${ghIssueState}`).catch(() => []);
+
+  container.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:16px;gap:12px">
+      <div class="row" style="gap:6px">
+        ${['all', 'open', 'closed'].map((s) => `
+          <button class="btn small ${ghIssueState === s ? 'primary' : 'ghost'}" data-issue-filter="${s}">
+            ${s === 'open' ? '🟢 Open' : s === 'closed' ? '🟣 Closed' : 'All'}
+          </button>
+        `).join('')}
+      </div>
+      <button class="btn primary small" id="ghNewIssueBtn">+ New Issue</button>
+    </div>
+
+    <div class="gh-issues-list">
+      ${issues.length ? issues.map((i) => {
+        const isOpen = i.state === 'open';
+        const author = i.user?.login || 'Reporter';
+        const avatar = i.user?.avatar_url || '';
+
+        return `
+          <div class="gh-item">
+            <div class="gh-item-main">
+              <div class="gh-item-title">
+                <span class="pill ${isOpen ? 'gh-pill-open' : 'gh-pill-closed'}">${isOpen ? 'Open' : 'Closed'}</span>
+                <span class="muted">#${i.number}</span>
+                <strong>${esc(i.title)}</strong>
+                ${(i.labels || []).map((l) => `<span class="pill" style="background:#${l.color}22;color:#${l.color};border-color:#${l.color}55">${esc(l.name)}</span>`).join('')}
+              </div>
+              <div class="gh-item-meta">
+                ${avatar ? `<img class="gh-avatar" src="${esc(avatar)}" alt="${esc(author)}">` : ''}
+                <span>Opened by <strong>${esc(author)}</strong> ${esc(timeAgo(i.created_at))}</span>
+                ${i.comments ? `<span>&bull; 💬 ${i.comments}</span>` : ''}
+              </div>
+            </div>
+            <div class="row" style="gap:6px;flex-shrink:0">
+              <button class="btn ghost small" data-import-task="${i.number}" data-issue-title="${esc(i.title)}" data-issue-body="${esc(i.body || '')}" title="Convert to sprint task">+ Task</button>
+              <button class="btn ghost small" data-import-bug="${i.number}" data-issue-title="${esc(i.title)}" data-issue-body="${esc(i.body || '')}" title="Convert to bug defect">+ Bug</button>
+              <button class="btn ghost small" data-view-issue="${esc(JSON.stringify(i))}">Details</button>
+              <a class="btn ghost small" href="${esc(i.html_url)}" target="_blank" rel="noopener">↗</a>
+            </div>
+          </div>
+        `;
+      }).join('') : emptyState('⬤', `No ${ghIssueState === 'all' ? '' : ghIssueState} issues found.`)}
+    </div>
+  `;
+
+  // State filters
+  container.querySelectorAll('[data-issue-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      ghIssueState = btn.dataset.issueFilter;
+      renderGHIssuesTab(container, repo);
+    });
+  });
+
+  // New Issue
+  container.querySelector('#ghNewIssueBtn')?.addEventListener('click', () => openNewIssueModal(repo));
+
+  // Import as Task
+  container.querySelectorAll('[data-import-task]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api.post(`${P()}/github/issues/${btn.dataset.importTask}/import-task`, {
+          title: btn.dataset.issueTitle,
+          body: btn.dataset.issueBody,
+        });
+        toast(`Imported Issue #${btn.dataset.importTask} as a Sprint Task!`);
+      } catch (err) {
+        toast(err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Import as Bug
+  container.querySelectorAll('[data-import-bug]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api.post(`${P()}/github/issues/${btn.dataset.importBug}/import-bug`, {
+          title: btn.dataset.issueTitle,
+          body: btn.dataset.issueBody,
+        });
+        toast(`Imported Issue #${btn.dataset.importBug} into Bug Tracker!`);
+      } catch (err) {
+        toast(err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // View details
+  container.querySelectorAll('[data-view-issue]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const issue = JSON.parse(btn.dataset.viewIssue);
+      openIssueDetailsModal(issue);
+    });
+  });
+}
+
+// ------------------------------------------------ sub-tab: github actions -
+async function renderGHActionsTab(container, repo) {
+  const [workflows, runs] = await Promise.all([
+    api.get(`${P()}/github/actions/workflows`).catch(() => []),
+    api.get(`${P()}/github/actions/runs`).catch(() => []),
+  ]);
+
+  container.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:16px;gap:12px">
+      <div class="row" style="gap:8px">
+        <strong style="font-size:14px;color:#123b82">Workflows:</strong>
+        ${workflows.map((w) => `<span class="pill blue">${esc(w.name)}</span>`).join('')}
+      </div>
+      <button class="btn primary small" id="ghRunWorkflowBtn">▶ Run Workflow</button>
+    </div>
+
+    <div class="gh-actions-list">
+      ${runs.length ? runs.map((r) => {
+        const isSuccess = r.conclusion === 'success';
+        const isFailure = r.conclusion === 'failure';
+        const isRunning = r.status === 'in_progress' || !r.conclusion;
+        const pillClass = isSuccess ? 'gh-pill-success' : isFailure ? 'gh-pill-failure' : 'gh-pill-running';
+        const statusLabel = isSuccess ? 'Success' : isFailure ? 'Failed' : isRunning ? 'In Progress' : (r.conclusion || r.status);
+        const icon = isSuccess ? '✔' : isFailure ? '✖' : isRunning ? '↻' : '•';
+        const author = r.actor?.login || 'CI Bot';
+
+        return `
+          <div class="gh-item">
+            <div class="gh-item-main">
+              <div class="gh-item-title">
+                <span class="pill ${pillClass}">${icon} ${statusLabel}</span>
+                <strong>${esc(r.name)}</strong>
+                <span class="pill grey">${esc(r.event)}</span>
+                <span class="muted" style="font-size:12px">#${r.run_number}</span>
+              </div>
+              <div class="gh-item-meta">
+                <span>⌥ <code>${esc(r.head_branch || 'main')}</code></span>
+                <span class="gh-sha">${esc(r.head_sha || '')}</span>
+                <span>&bull;</span>
+                <span>Triggered by <strong>${esc(author)}</strong></span>
+                <span>&bull;</span>
+                <span>${esc(timeAgo(r.created_at))}</span>
+                <span>&bull;</span>
+                <span>⏱ ${esc(r.duration || '—')}</span>
+                ${r.commit_message ? `<span class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">&bull; ${esc(r.commit_message)}</span>` : ''}
+              </div>
+            </div>
+            <div class="row" style="gap:8px;flex-shrink:0">
+              <button class="btn ghost small" data-view-run="${esc(JSON.stringify(r))}">View Steps</button>
+              <a class="btn ghost small" href="${esc(r.html_url)}" target="_blank" rel="noopener">↗ Log</a>
+            </div>
+          </div>
+        `;
+      }).join('') : emptyState('⚡', 'No workflow runs found.')}
+    </div>
+  `;
+
+  // Run Workflow dispatch button
+  container.querySelector('#ghRunWorkflowBtn')?.addEventListener('click', () => openDispatchWorkflowModal(workflows, repo));
+
+  // View steps
+  container.querySelectorAll('[data-view-run]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const runData = JSON.parse(btn.dataset.viewRun);
+      openRunStepsModal(runData);
+    });
+  });
+}
+
+// ------------------------------------------------------------- modals --------
+
+function openGHConfigModal(config) {
+  openModal('Configure GitHub Repository', `
+    <p class="muted" style="margin-top:0;font-size:13px">Connect this EngineerOS project to a public or private GitHub repository.</p>
+    <div class="field">
+      <label for="cfgRepo">Repository (owner/repo)</label>
+      <input id="cfgRepo" value="${esc(config.repo || 'arif-404-hub/OS')}" placeholder="e.g. arif-404-hub/OS or facebook/react">
+    </div>
+    <div class="field">
+      <label for="cfgToken">Personal Access Token (PAT) <span class="muted">(optional for private repos & write actions)</span></label>
+      <input id="cfgToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="new-password">
+      <p class="hint" style="text-align:left;margin-top:4px">A token with <code>repo</code> and <code>workflow</code> scopes allows creating PRs, issues, and triggering GitHub Actions.</p>
+    </div>
+    <p class="error hidden" id="cfgError"></p>
+    <button class="btn primary block" id="cfgSave">Save &amp; Connect</button>
+  `, () => {
+    el('cfgSave').addEventListener('click', async () => {
+      const repoVal = el('cfgRepo').value.trim();
+      const tokenVal = el('cfgToken').value.trim();
+      try {
+        await api.post(`${P()}/github/config`, { repo: repoVal, token: tokenVal });
+        closeModal();
+        toast(`Connected to repository "${repoVal}"!`);
+        renderGitHub();
+      } catch (err) {
+        el('cfgError').textContent = err.message;
+        el('cfgError').classList.remove('hidden');
+      }
+    });
+  });
+}
+
+async function openCommitDiffModal(sha, headline) {
+  openModal(`Commit: ${sha.slice(0, 7)}`, `
+    <div class="empty"><span class="spinner"></span></div>
+  `);
+
+  try {
+    const data = await api.get(`${P()}/github/commits/${sha}`);
+    const files = data.files || [];
+
+    el('modalBody').innerHTML = `
+      <div style="margin-bottom:14px">
+        <h4 style="margin:0 0 4px">${esc(headline || data.commit?.message || 'Commit details')}</h4>
+        <div class="muted" style="font-size:12px">
+          Author: <strong>${esc(data.author?.login || data.commit?.author?.name || 'Developer')}</strong> &bull;
+          Date: ${esc(new Date(data.commit?.author?.date || Date.now()).toLocaleString())}
+        </div>
+        ${data.stats ? `
+          <div class="row" style="margin-top:8px;font-size:12.5px">
+            <span class="pill green">+${data.stats.additions || 0}</span>
+            <span class="pill red">-${data.stats.deletions || 0}</span>
+            <span class="muted">${files.length} file${files.length === 1 ? '' : 's'} changed</span>
+          </div>
+        ` : ''}
+      </div>
+
+      <div style="max-height:55vh;overflow-y:auto;display:grid;gap:12px">
+        ${files.length ? files.map((f) => `
+          <div class="gh-diff-block">
+            <div class="gh-diff-file">
+              <span>📄 ${esc(f.filename)}</span>
+              <span class="muted">+${f.additions || 0} / -${f.deletions || 0}</span>
+            </div>
+            ${f.patch ? `
+              <pre class="gh-diff-lines">${f.patch.split('\n').map((line) => {
+                const cls = line.startsWith('+') && !line.startsWith('+++') ? 'gh-diff-add'
+                  : line.startsWith('-') && !line.startsWith('---') ? 'gh-diff-del' : '';
+                return `<span class="${cls}">${esc(line)}</span>`;
+              }).join('\n')}</pre>
+            ` : '<div class="muted" style="padding:10px 14px;font-size:12px">Binary or unchanged content</div>'}
+          </div>
+        `).join('') : '<p class="muted">No file diff details available for this commit.</p>'}
+      </div>
+      <div style="margin-top:16px;text-align:right">
+        <a class="btn small" href="${esc(data.html_url)}" target="_blank" rel="noopener">↗ Open Commit on GitHub</a>
+      </div>
+    `;
+  } catch (err) {
+    el('modalBody').innerHTML = `<p class="error">${esc(err.message)}</p>`;
+  }
+}
+
+async function openLinkCommitModal(sha, headline) {
+  openModal(`Link Commit ${sha} to SDLC`, `
+    <p class="muted" style="margin-top:0;font-size:13px">Attach this commit to an EngineerOS Task or Requirement for end-to-end traceability.</p>
+    <div class="field">
+      <label>Commit Message</label>
+      <input readonly value="${esc(headline)}" style="background:var(--bg-2)">
+    </div>
+    <div class="field">
+      <label for="linkTargetType">Link Target Type</label>
+      <select id="linkTargetType">
+        <option value="task" selected>Sprint Task</option>
+        <option value="requirement">Requirement</option>
+      </select>
+    </div>
+    <div class="field" id="linkSelectGroup">
+      <label for="linkTargetId">Select Item</label>
+      <select id="linkTargetId"><option>Loading...</option></select>
+    </div>
+    <p class="error hidden" id="linkError"></p>
+    <button class="btn primary block" id="linkSaveBtn">Save Link</button>
+  `, async () => {
+    const [tasks, reqs] = await Promise.all([
+      api.get(`${P()}/tasks`).catch(() => []),
+      api.get(`${P()}/requirements`).catch(() => []),
+    ]);
+
+    const updateSelect = () => {
+      const type = el('linkTargetType').value;
+      const select = el('linkTargetId');
+      if (type === 'task') {
+        select.innerHTML = tasks.length
+          ? tasks.map((t) => `<option value="${t.id}">[${STATUS_LABEL[t.status] || t.status}] ${esc(t.title)}</option>`).join('')
+          : '<option value="">No tasks found in project</option>';
+      } else {
+        select.innerHTML = reqs.length
+          ? reqs.map((r) => `<option value="${r.id}">[${r.code}] ${esc(r.title)}</option>`).join('')
+          : '<option value="">No requirements found</option>';
+      }
+    };
+
+    el('linkTargetType').addEventListener('change', updateSelect);
+    updateSelect();
+
+    el('linkSaveBtn').addEventListener('click', async () => {
+      const targetType = el('linkTargetType').value;
+      const targetId = el('linkTargetId').value;
+      if (!targetId) return;
+
+      try {
+        await api.post(`${P()}/github/links`, {
+          item_type: 'commit',
+          item_id: sha,
+          item_title: headline,
+          target_type: targetType,
+          target_id: Number(targetId),
+        });
+        closeModal();
+        toast(`Commit ${sha} linked to ${targetType}!`);
+        renderGitHub();
+      } catch (err) {
+        el('linkError').textContent = err.message;
+        el('linkError').classList.remove('hidden');
+      }
+    });
+  });
+}
+
+async function openNewPRModal(repo) {
+  const branches = await api.get(`${P()}/github/branches`).catch(() => []);
+  openModal('Create Pull Request', `
+    <div class="field">
+      <label for="prTitle">Title</label>
+      <input id="prTitle" placeholder="e.g. feat: implement GitHub Actions monitoring">
+    </div>
+    <div class="grid cols-2" style="margin-bottom:14px">
+      <div class="field" style="margin-bottom:0">
+        <label for="prHead">Head branch (source)</label>
+        <select id="prHead">
+          ${branches.map((b) => `<option value="${esc(b.name)}" ${b.name === ghBranch ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label for="prBase">Base branch (target)</label>
+        <select id="prBase">
+          ${branches.map((b) => `<option value="${esc(b.name)}" ${b.name === (repo.default_branch || 'main') ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="prBody">Description</label>
+      <textarea id="prBody" rows="5" placeholder="Explain the context, requirements fulfilled, and verification steps."></textarea>
+    </div>
+    <p class="error hidden" id="prError"></p>
+    <button class="btn primary block" id="prSubmit">Submit Pull Request</button>
+  `, () => {
+    el('prTitle').focus();
+    el('prSubmit').addEventListener('click', async () => {
+      const title = el('prTitle').value.trim();
+      const head = el('prHead').value;
+      const base = el('prBase').value;
+      const body = el('prBody').value.trim();
+
+      if (!title) {
+        el('prError').textContent = 'Please enter a PR title.';
+        el('prError').classList.remove('hidden');
+        return;
+      }
+
+      try {
+        await api.post(`${P()}/github/pulls`, { title, head, base, body });
+        closeModal();
+        toast(`Pull request "${title}" created!`);
+        ghTab = 'pulls';
+        renderGitHub();
+      } catch (err) {
+        el('prError').textContent = err.message;
+        el('prError').classList.remove('hidden');
+      }
+    });
+  });
+}
+
+function openPRDetailsModal(pr) {
+  openModal(`Pull Request #${pr.number}`, `
+    <div style="display:grid;gap:12px">
+      <div>
+        <div class="row" style="gap:8px;margin-bottom:6px">
+          <span class="pill ${pr.state === 'merged' ? 'gh-pill-merged' : pr.state === 'open' ? 'gh-pill-open' : 'gh-pill-closed'}">
+            ${pr.state === 'merged' ? 'Merged' : pr.state === 'open' ? 'Open' : 'Closed'}
+          </span>
+          <h3 style="margin:0">${esc(pr.title)}</h3>
+        </div>
+        <div class="muted" style="font-size:12.5px">
+          Opened by <strong>${esc(pr.user?.login || 'Developer')}</strong> ${esc(timeAgo(pr.created_at))} &bull;
+          <code>${esc(pr.base?.ref || 'main')}</code> ⇦ <code>${esc(pr.head?.ref || 'feature')}</code>
+        </div>
+      </div>
+
+      <div class="card" style="background:var(--bg-2);margin:0;padding:14px">
+        <h5 style="margin:0 0 6px;text-transform:uppercase;font-size:11px;color:var(--muted)">Description</h5>
+        <div style="font-size:13.5px;line-height:1.55;white-space:pre-wrap">${esc(pr.body || 'No description provided.')}</div>
+      </div>
+
+      ${pr.labels && pr.labels.length ? `
+        <div>
+          <h5 style="margin:0 0 6px;text-transform:uppercase;font-size:11px;color:var(--muted)">Labels</h5>
+          <div class="row">${pr.labels.map((l) => `<span class="pill" style="background:#${l.color}22;color:#${l.color};border-color:#${l.color}55">${esc(l.name)}</span>`).join('')}</div>
+        </div>
+      ` : ''}
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <span class="muted" style="font-size:12px">💬 ${pr.comments || 0} comments</span>
+        <a class="btn primary small" href="${esc(pr.html_url)}" target="_blank" rel="noopener">↗ View on GitHub</a>
+      </div>
+    </div>
+  `);
+}
+
+function openNewIssueModal(repo) {
+  openModal('Create New GitHub Issue', `
+    <div class="field">
+      <label for="issueTitle">Title</label>
+      <input id="issueTitle" placeholder="e.g. Broken link in IEEE-830 export">
+    </div>
+    <div class="field">
+      <label for="issueLabels">Labels <span class="muted">(comma-separated)</span></label>
+      <input id="issueLabels" placeholder="e.g. bug, high-priority, ui">
+    </div>
+    <div class="field">
+      <label for="issueBody">Description</label>
+      <textarea id="issueBody" rows="6" placeholder="Describe the problem or enhancement in detail..."></textarea>
+    </div>
+    <p class="error hidden" id="issueError"></p>
+    <button class="btn primary block" id="issueSubmit">Submit Issue</button>
+  `, () => {
+    el('issueTitle').focus();
+    el('issueSubmit').addEventListener('click', async () => {
+      const title = el('issueTitle').value.trim();
+      const body = el('issueBody').value.trim();
+      const labels = el('issueLabels').value.split(',').map((l) => l.trim()).filter(Boolean);
+
+      if (!title) {
+        el('issueError').textContent = 'Please enter an issue title.';
+        el('issueError').classList.remove('hidden');
+        return;
+      }
+
+      try {
+        await api.post(`${P()}/github/issues`, { title, body, labels });
+        closeModal();
+        toast(`Issue "${title}" created!`);
+        ghTab = 'issues';
+        renderGitHub();
+      } catch (err) {
+        el('issueError').textContent = err.message;
+        el('issueError').classList.remove('hidden');
+      }
+    });
+  });
+}
+
+function openIssueDetailsModal(issue) {
+  openModal(`Issue #${issue.number}`, `
+    <div style="display:grid;gap:12px">
+      <div>
+        <div class="row" style="gap:8px;margin-bottom:6px">
+          <span class="pill ${issue.state === 'open' ? 'gh-pill-open' : 'gh-pill-closed'}">${issue.state === 'open' ? 'Open' : 'Closed'}</span>
+          <h3 style="margin:0">${esc(issue.title)}</h3>
+        </div>
+        <div class="muted" style="font-size:12.5px">
+          Opened by <strong>${esc(issue.user?.login || 'Reporter')}</strong> ${esc(timeAgo(issue.created_at))}
+        </div>
+      </div>
+
+      <div class="card" style="background:var(--bg-2);margin:0;padding:14px">
+        <h5 style="margin:0 0 6px;text-transform:uppercase;font-size:11px;color:var(--muted)">Description</h5>
+        <div style="font-size:13.5px;line-height:1.55;white-space:pre-wrap">${esc(issue.body || 'No description provided.')}</div>
+      </div>
+
+      ${issue.labels && issue.labels.length ? `
+        <div>
+          <h5 style="margin:0 0 6px;text-transform:uppercase;font-size:11px;color:var(--muted)">Labels</h5>
+          <div class="row">${issue.labels.map((l) => `<span class="pill" style="background:#${l.color}22;color:#${l.color};border-color:#${l.color}55">${esc(l.name)}</span>`).join('')}</div>
+        </div>
+      ` : ''}
+
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:8px">
+        <div class="row" style="gap:8px">
+          <button class="btn small" id="dlgImportTask">+ Convert to Task</button>
+          <button class="btn small" id="dlgImportBug">+ Convert to Bug</button>
+        </div>
+        <a class="btn primary small" href="${esc(issue.html_url)}" target="_blank" rel="noopener">↗ View on GitHub</a>
+      </div>
+    </div>
+  `, () => {
+    el('dlgImportTask')?.addEventListener('click', async () => {
+      try {
+        await api.post(`${P()}/github/issues/${issue.number}/import-task`, { title: issue.title, body: issue.body });
+        closeModal();
+        toast(`Imported Issue #${issue.number} as a Sprint Task!`);
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+
+    el('dlgImportBug')?.addEventListener('click', async () => {
+      try {
+        await api.post(`${P()}/github/issues/${issue.number}/import-bug`, { title: issue.title, body: issue.body });
+        closeModal();
+        toast(`Imported Issue #${issue.number} into Bug Tracker!`);
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
+async function openDispatchWorkflowModal(workflows, repo) {
+  const branches = await api.get(`${P()}/github/branches`).catch(() => []);
+
+  openModal('Dispatch GitHub Actions Workflow', `
+    <p class="muted" style="margin-top:0;font-size:13px">Manually trigger a CI/CD workflow run on a selected git branch.</p>
+    <div class="field">
+      <label for="wfSelect">Select Workflow</label>
+      <select id="wfSelect">
+        ${workflows.map((w) => `<option value="${w.id}">${esc(w.name)} (${esc(w.path || 'workflow')})</option>`).join('')}
+      </select>
+    </div>
+    <div class="field">
+      <label for="wfBranch">Branch Ref</label>
+      <select id="wfBranch">
+        ${branches.map((b) => `<option value="${esc(b.name)}" ${b.name === (repo.default_branch || 'main') ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
+      </select>
+    </div>
+    <p class="error hidden" id="wfError"></p>
+    <button class="btn primary block" id="wfRunSubmit">Trigger Run Now</button>
+  `, () => {
+    el('wfRunSubmit').addEventListener('click', async () => {
+      const workflowId = el('wfSelect').value;
+      const ref = el('wfBranch').value;
+      const selectedWf = workflows.find((w) => String(w.id) === String(workflowId));
+
+      try {
+        await api.post(`${P()}/github/actions/dispatch`, {
+          workflow_id: workflowId,
+          ref,
+          name: selectedWf?.name || 'Manual Workflow Trigger',
+        });
+        closeModal();
+        toast(`Triggered workflow run on "${ref}"!`);
+        ghTab = 'actions';
+        renderGitHub();
+      } catch (err) {
+        el('wfError').textContent = err.message;
+        el('wfError').classList.remove('hidden');
+      }
+    });
+  });
+}
+
+function openRunStepsModal(run) {
+  const steps = run.steps || [];
+  openModal(`Run Steps: ${run.name}`, `
+    <div style="display:grid;gap:12px">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <h4 style="margin:0 0 3px">${esc(run.name)}</h4>
+          <span class="muted" style="font-size:12px">Branch: <code>${esc(run.head_branch || 'main')}</code> &bull; Event: ${esc(run.event)} &bull; ${esc(run.duration)}</span>
+        </div>
+        <span class="pill ${run.conclusion === 'success' ? 'gh-pill-success' : 'gh-pill-failure'}">${run.conclusion || run.status}</span>
+      </div>
+
+      <div class="card" style="background:var(--bg-2);margin:0;padding:12px">
+        <h5 style="margin:0 0 8px;text-transform:uppercase;font-size:11px;color:var(--muted)">Workflow Steps</h5>
+        <div style="display:grid;gap:6px">
+          ${steps.map((s, idx) => `
+            <div class="row" style="justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:13px">
+              <span><strong>${idx + 1}.</strong> ${esc(s.name)}</span>
+              <span class="muted">${s.conclusion === 'success' ? '✔' : '↻'} ${esc(s.duration || '—')}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div style="text-align:right">
+        <a class="btn primary small" href="${esc(run.html_url)}" target="_blank" rel="noopener">↗ View Full Logs on GitHub</a>
+      </div>
+    </div>
+  `);
 }
 
 // ---------------------------------------------------------- assistant -----
