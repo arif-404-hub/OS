@@ -1,4 +1,5 @@
 import { api, token } from './api.js';
+import { initUMLStudio } from './uml.js';
 
 // ------------------------------------------------------------- helpers ----
 
@@ -689,57 +690,8 @@ async function loadMermaid() {
 }
 
 async function renderUML() {
-  el('topbarActions').innerHTML = DIAGRAMS
-    .map(([type, label]) => `<button class="btn small ${type === umlType ? 'primary' : ''}" data-uml="${type}">${label}</button>`)
-    .join('');
-
-  let diagramData;
-  try {
-    diagramData = await api.get(`${P()}/uml/${umlType}`);
-  } catch (err) {
-    if (err.message === 'Generate requirements first.') {
-      el('view').innerHTML = `<div class="card workflow-empty"><div class="big">◇</div><h3>Generate requirements first</h3><p class="muted">UML diagrams are generated from this project's description and saved requirements.</p><button class="btn primary" id="goRequirements">Open Requirements</button></div>`;
-      el('goRequirements').addEventListener('click', () => { state.view = 'requirements'; render(); });
-      return;
-    }
-    throw err;
-  }
-  const { mermaid, recipe } = diagramData;
-  el('view').innerHTML = `
-    <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:12px">
-        <h3 style="margin:0">${DIAGRAMS.find(([t]) => t === umlType)[1]} diagram</h3>
-        <button class="btn small" id="copyMermaid">Copy Mermaid source</button>
-      </div>
-      <p class="muted" style="margin:0 0 12px">${esc(recipe?.purpose || "Generated from this project's requirements and domain vocabulary.")}</p>
-      ${recipe ? `<div class="issues" style="margin-bottom:12px"><strong>Pattern:</strong> ${esc(recipe.rule)} &nbsp; <strong>Inputs:</strong> ${recipe.inputs.map(esc).join(' · ')}</div>` : ''}
-      <div class="mermaid-box" id="diagram"><span class="muted">Rendering…</span></div>
-    </div>
-    <div class="card">
-      <h3>Mermaid source</h3>
-      <pre class="code">${esc(mermaid)}</pre>
-    </div>`;
-
-  el('topbarActions').addEventListener('click', (e) => {
-    const type = e.target.dataset?.uml;
-    if (type) { umlType = type; render(); }
-  });
-  el('copyMermaid').addEventListener('click', () => {
-    navigator.clipboard.writeText(mermaid).then(() => toast('Mermaid source copied.'));
-  });
-
-  const lib = await loadMermaid();
-  const box = el('diagram');
-  if (!lib) {
-    box.innerHTML = '<span class="muted">Diagram rendering needs an internet connection. The Mermaid source below is complete and can be pasted into any Mermaid viewer.</span>';
-    return;
-  }
-  try {
-    const { svg } = await lib.render(`d${Date.now()}`, mermaid);
-    box.innerHTML = svg;
-  } catch (err) {
-    box.innerHTML = `<span class="muted">This diagram could not be rendered: ${esc(err.message)}</span>`;
-  }
+  el('topbarActions').innerHTML = '';
+  await initUMLStudio(el('view'), state.project, api, toast, openModal, closeModal);
 }
 
 // -------------------------------------------------------------- board -----

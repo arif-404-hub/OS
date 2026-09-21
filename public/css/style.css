@@ -344,3 +344,13 @@ pre.code { background: #f0f6fd; border: 1px solid var(--line); border-radius: 10
   .auth-brand { padding: 20px 20px 0; }.eyebrow { font-size: 10px; }.auth-brand h1 { margin-top: 20px; font-size: 35px; letter-spacing: -1.3px; }.auth-brand > p { font-size: 13px; }.auth-points li { font-size: 11px; }
   .auth-card { padding: 29px 22px 24px; }.auth-footer { display: none; }
 }
+
+/* ---------------------------------------------------------- UML Studio -- */
+
+.uml-studio { display: flex; flex-direction: column; gap: 4px; }
+.svg-diagram-wrapper { width: 100%; display: flex; justify-content: center; align-items: center; }
+.svg-diagram-wrapper svg { max-width: 100%; height: auto; display: block; border-radius: 6px; }
+#umlDiagramTabs button { font-weight: 500; transition: all .15s; white-space: nowrap; }
+#umlDiagramTabs button.primary { font-weight: 600; }
+#umlModelChips .pill { padding: 4px 10px; border-radius: 6px; font-size: 12px; }
+

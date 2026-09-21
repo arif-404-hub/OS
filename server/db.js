@@ -141,6 +141,35 @@ CREATE TABLE IF NOT EXISTS github_links (
   target_id   INTEGER NOT NULL,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS system_models (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  model_json  TEXT NOT NULL,
+  version     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS diagram_specs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  diagram_type    TEXT NOT NULL,
+  source_code     TEXT NOT NULL,
+  validation_json TEXT NOT NULL DEFAULT '[]',
+  version         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS generated_diagrams (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  diagram_type TEXT NOT NULL,
+  svg_path     TEXT NOT NULL DEFAULT '',
+  svg_content  TEXT,
+  version      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Set default github_repo only for the seed EngineerOS project if empty
@@ -158,3 +187,4 @@ export const run = (sql, ...args) => db.prepare(sql).run(...args);
 export function log(projectId, userId, message) {
   run('INSERT INTO activity (project_id, user_id, message) VALUES (?, ?, ?)', projectId, userId, message);
 }
+
