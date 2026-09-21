@@ -354,3 +354,458 @@ pre.code { background: #f0f6fd; border: 1px solid var(--line); border-radius: 10
 #umlDiagramTabs button.primary { font-weight: 600; }
 #umlModelChips .pill { padding: 4px 10px; border-radius: 6px; font-size: 12px; }
 
+/* ------------------------------------------------ Showcase / Marketing Modal -- */
+
+.modal-card.modal-lg {
+  width: min(980px, 94vw);
+  max-height: 92vh;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #d4e4f7;
+  box-shadow: 0 24px 64px rgba(20, 60, 120, .22);
+  display: flex;
+  flex-direction: column;
+}
+
+.showcase-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e1ecf8;
+  padding: 14px 24px;
+  background: linear-gradient(180deg, #f8fbfe 0%, #edf5fd 100%);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.showcase-tabs {
+  display: flex;
+  gap: 6px;
+  background: #e2edfa;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.showcase-tab {
+  border: 0;
+  background: transparent;
+  color: #496894;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 18px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all .15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.showcase-tab:hover {
+  color: var(--brand);
+  background: rgba(255,255,255,.5);
+}
+
+.showcase-tab.active {
+  background: #ffffff;
+  color: var(--brand);
+  box-shadow: 0 2px 8px rgba(29, 116, 237, .16);
+  font-weight: 700;
+}
+
+.showcase-body {
+  padding: 28px 30px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.showcase-hero {
+  text-align: center;
+  max-width: 680px;
+  margin: 0 auto 32px;
+}
+
+.showcase-hero .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e1f0ff;
+  color: #126ee8;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  margin-bottom: 12px;
+}
+
+.showcase-hero h2 {
+  font-size: 28px;
+  color: #102652;
+  font-weight: 800;
+  letter-spacing: -.6px;
+  margin-bottom: 10px;
+  line-height: 1.2;
+}
+
+.showcase-hero p {
+  font-size: 14.5px;
+  color: #55729a;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* --------------------------------------------------------- Feature Grid -- */
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.feature-card {
+  background: #fbfdff;
+  border: 1px solid #e1edfa;
+  border-radius: 14px;
+  padding: 22px;
+  transition: all .2s ease;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: transparent;
+  transition: background .2s;
+}
+
+.feature-card:hover {
+  transform: translateY(-3px);
+  border-color: #b7d6fb;
+  box-shadow: 0 12px 28px rgba(35, 95, 175, .1);
+  background: #ffffff;
+}
+
+.feature-card:hover::before {
+  background: linear-gradient(90deg, #1d74ed, #4a90f5);
+}
+
+.feature-icon-wrapper {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  margin-bottom: 16px;
+  background: #e7f2ff;
+  color: #1771eb;
+}
+
+.feature-icon-wrapper.purple { background: #efeaff; color: #6941c6; }
+.feature-icon-wrapper.green  { background: #eafaf1; color: #12b76a; }
+.feature-icon-wrapper.amber  { background: #fef6ee; color: #f79009; }
+.feature-icon-wrapper.rose   { background: #fef3f2; color: #f04438; }
+.feature-icon-wrapper.cyan   { background: #e6f9fc; color: #06aed4; }
+
+.feature-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #132a57;
+  margin-bottom: 8px;
+}
+
+.feature-card p {
+  font-size: 13px;
+  color: #5a769f;
+  line-height: 1.55;
+  margin: 0 0 16px;
+  flex: 1;
+}
+
+.feature-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.feature-tag {
+  background: #eef5fc;
+  border: 1px solid #dce8f5;
+  color: #3b5a86;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------- Pricing Section -- */
+
+.pricing-billing-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 30px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #4b668f;
+}
+
+.billing-toggle {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+}
+
+.billing-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.billing-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #cbdcf0;
+  transition: .25s;
+  border-radius: 34px;
+}
+
+.billing-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .25s;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0,0,0,.15);
+}
+
+.billing-toggle input:checked + .billing-slider {
+  background-color: var(--brand);
+}
+
+.billing-toggle input:checked + .billing-slider:before {
+  transform: translateX(22px);
+}
+
+.discount-badge {
+  background: #ecfdf3;
+  color: #027a48;
+  border: 1px solid #abefc6;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 22px;
+  align-items: stretch;
+}
+
+.pricing-card {
+  background: #ffffff;
+  border: 1px solid #dce8f6;
+  border-radius: 16px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: all .2s ease;
+}
+
+.pricing-card:hover {
+  border-color: #bad9fc;
+  box-shadow: 0 14px 34px rgba(32, 90, 170, .11);
+}
+
+.pricing-card.featured {
+  border: 2px solid #1d74ed;
+  background: linear-gradient(180deg, #f7faff 0%, #ffffff 100%);
+  box-shadow: 0 16px 40px rgba(29, 116, 237, .16);
+  transform: scale(1.02);
+}
+
+.popular-ribbon {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, #1d74ed, #428eff);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  padding: 4px 14px;
+  border-radius: 14px;
+  box-shadow: 0 4px 12px rgba(29, 116, 237, .3);
+}
+
+.pricing-card h3 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #112852;
+  margin-bottom: 6px;
+}
+
+.pricing-card .plan-desc {
+  font-size: 12.5px;
+  color: #6380a8;
+  margin-bottom: 18px;
+  min-height: 38px;
+}
+
+.pricing-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 22px;
+}
+
+.pricing-price .amount {
+  font-size: 38px;
+  font-weight: 900;
+  color: #0f244e;
+  line-height: 1;
+}
+
+.pricing-price .period {
+  font-size: 13px;
+  color: #6c88b0;
+  font-weight: 500;
+}
+
+.pricing-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 26px;
+  display: grid;
+  gap: 12px;
+  flex: 1;
+}
+
+.pricing-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #3b5780;
+  line-height: 1.4;
+}
+
+.pricing-features li i {
+  font-style: normal;
+  color: #12b76a;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.pricing-card .btn {
+  padding: 12px;
+  font-weight: 700;
+  border-radius: 10px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------- Docs Tab -- */
+
+.docs-section {
+  margin-bottom: 28px;
+}
+
+.docs-section h3 {
+  color: #123062;
+  font-size: 18px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.docs-section p {
+  color: #506f97;
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.docs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.docs-table th, .docs-table td {
+  padding: 10px 14px;
+  border: 1px solid #e1edfa;
+  text-align: left;
+}
+
+.docs-table th {
+  background: #f2f7fd;
+  color: #163668;
+  font-weight: 700;
+}
+
+.docs-table td {
+  background: #ffffff;
+  color: #38557d;
+}
+
+/* ------------------------------------------------------------ About Tab -- */
+
+.about-hero {
+  text-align: center;
+  padding: 10px 0 20px;
+}
+
+.about-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.about-stat-box {
+  background: #f7faff;
+  border: 1px solid #dce8f6;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+.about-stat-box strong {
+  display: block;
+  font-size: 26px;
+  color: var(--brand);
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.about-stat-box span {
+  font-size: 12px;
+  color: #6581a6;
+  font-weight: 600;
+}
+

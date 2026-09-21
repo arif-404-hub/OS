@@ -26,13 +26,19 @@ function toast(message, bad = false) {
   toast.timer = setTimeout(() => node.classList.add('hidden'), 3600);
 }
 
-function openModal(title, html, onReady) {
+function openModal(title, html, onReady, isWide = false) {
   el('modalTitle').textContent = title;
   el('modalBody').innerHTML = html;
+  const card = el('modal').querySelector('.modal-card');
+  if (card) card.classList.toggle('modal-lg', Boolean(isWide));
   el('modal').classList.remove('hidden');
   if (onReady) onReady();
 }
-const closeModal = () => el('modal').classList.add('hidden');
+const closeModal = () => {
+  el('modal').classList.add('hidden');
+  const card = el('modal').querySelector('.modal-card');
+  if (card) card.classList.remove('modal-lg');
+};
 
 const barClass = (value) => (value >= 75 ? 'ok' : value >= 45 ? 'warn' : 'bad');
 const meter = (value, cls) => `<div class="bar ${cls ?? barClass(value)}"><i style="width:${Math.max(0, Math.min(100, value))}%"></i></div>`;
@@ -59,16 +65,44 @@ el('authTabs').addEventListener('click', (e) => {
 
 async function setupSocialLogin() {
   const buttons = { google: el('googleLogin'), github: el('githubLogin') };
+
+  Object.entries(buttons).forEach(([provider, button]) => {
+    if (!button) return;
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const originalHtml = button.innerHTML;
+      button.innerHTML = '<span class="spinner"></span> Connecting...';
+      try {
+        const providers = await api.get('/auth/providers').catch(() => ({}));
+        if (!providers[provider]) {
+          button.disabled = false;
+          button.innerHTML = originalHtml;
+          const name = provider === 'google' ? 'Google' : 'GitHub';
+          el('authError').textContent = `${name} OAuth is not configured on the server. Please verify ${provider === 'google' ? 'GOOGLE_CLIENT_ID' : 'GITHUB_CLIENT_ID'} in .env.`;
+          el('authError').classList.remove('hidden');
+          return;
+        }
+        window.location.href = `/api/auth/${provider}`;
+      } catch (err) {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+        el('authError').textContent = err.message || 'Could not initiate social login.';
+        el('authError').classList.remove('hidden');
+      }
+    });
+  });
+
   try {
     const providers = await api.get('/auth/providers');
     Object.entries(buttons).forEach(([provider, button]) => {
+      if (!button) return;
       const enabled = Boolean(providers[provider]);
-      button.disabled = !enabled;
-      button.title = enabled ? `Continue with ${provider[0].toUpperCase()}${provider.slice(1)}` : `${provider[0].toUpperCase()}${provider.slice(1)} login is not configured`;
-      if (enabled) button.addEventListener('click', () => { window.location.href = `/api/auth/${provider}`; });
+      const name = provider === 'google' ? 'Google' : 'GitHub';
+      button.title = enabled ? `Continue with ${name}` : `${name} login is not configured in .env`;
+      button.style.opacity = enabled ? '1' : '0.85';
     });
   } catch {
-    Object.values(buttons).forEach((button) => { button.disabled = true; });
+    // Keep defaults if API is warming up
   }
 }
 
@@ -2313,21 +2347,398 @@ async function renderTeam() {
   });
 }
 
+// ------------------------------------------------ Showcase / Marketing Modal --
+
+function openShowcaseModal(initialTab = 'features') {
+  const tabs = [
+    { id: 'features', label: '✦ Features', icon: '✦' },
+    { id: 'pricing', label: '★ Pricing', icon: '★' },
+    { id: 'docs', label: '▤ Docs', icon: '▤' },
+    { id: 'about', label: 'ℹ About', icon: 'ℹ' },
+  ];
+
+  let currentTab = initialTab || 'features';
+  let isAnnual = false;
+
+  function renderShowcaseContent() {
+    if (currentTab === 'features') {
+      return `
+        <div class="showcase-hero">
+          <span class="badge">✦ AI-POWERED PLATFORM</span>
+          <h2>Build Better Software, Faster With AI</h2>
+          <p>EngineerOS unites requirements analysis, automated UML modeling, agile execution, and GitHub live tracking into a single unified workspace.</p>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-icon-wrapper">◈</div>
+            <h3>AI Requirement &amp; SRS Generator</h3>
+            <p>Converts free-form domain prompts into formal IEEE 830 functional/non-functional requirements, user stories, acceptance criteria, and quality scores.</p>
+            <div class="feature-tags">
+              <span class="feature-tag">IEEE 830</span>
+              <span class="feature-tag">Quality Scoring</span>
+              <span class="feature-tag">Ambiguity Flagging</span>
+            </div>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper purple">◇</div>
+            <h3>Course Rule Engine &amp; 10 UML Diagrams</h3>
+            <p>Single source of truth System Model JSON deterministically drives 10 synchronized diagrams (Use Case, Class, Activity, Swimlane, Sequence, State, Deployment, ER, Context, DFD) validated by Rule Engine.</p>
+            <div class="feature-tags">
+              <span class="feature-tag">10 Diagram Types</span>
+              <span class="feature-tag">Rule Engine</span>
+              <span class="feature-tag">Self-Healing</span>
+              <span class="feature-tag">PlantUML Vector</span>
+            </div>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper green">▥</div>
+            <h3>Agile Sprint Planning &amp; Kanban</h3>
+            <p>Streamlined backlog management, story point estimations, sprint lifecycle (Active/Completed), and rapid status transitions (Backlog to Done).</p>
+            <div class="feature-tags">
+              <span class="feature-tag">Scrum Board</span>
+              <span class="feature-tag">Story Points</span>
+              <span class="feature-tag">Task Triage</span>
+            </div>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper amber">⇄</div>
+            <h3>End-to-End Traceability Matrix</h3>
+            <p>Bidirectional audit trail guaranteeing that every requirement maps directly to tasks, test cases, bug reports, and GitHub commit references.</p>
+            <div class="feature-tags">
+              <span class="feature-tag">100% Traceable</span>
+              <span class="feature-tag">Audit Ready</span>
+              <span class="feature-tag">Compliance</span>
+            </div>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper cyan">⌥</div>
+            <h3>Live GitHub Bi-directional Sync</h3>
+            <p>Connect your GitHub account to browse branches, review pull requests, inspect commit diffs, and monitor GitHub Actions CI/CD workflow runs in real-time.</p>
+            <div class="feature-tags">
+              <span class="feature-tag">Repo Selector</span>
+              <span class="feature-tag">PR Review</span>
+              <span class="feature-tag">Workflow Status</span>
+            </div>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon-wrapper rose">⬤</div>
+            <h3>Defect &amp; Bug Tracking</h3>
+            <p>Full lifecycle bug triaging with severity classifications (critical, high, medium, low), repro steps, and linked requirement resolution verification.</p>
+            <div class="feature-tags">
+              <span class="feature-tag">Severity Matrix</span>
+              <span class="feature-tag">Zero Regression</span>
+              <span class="feature-tag">Root Cause</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (currentTab === 'pricing') {
+      const proPrice = isAnnual ? '$24' : '$29';
+      const entPrice = isAnnual ? '$79' : '$99';
+
+      return `
+        <div class="showcase-hero">
+          <span class="badge">TRANSPARENT PLANS</span>
+          <h2>Simple, Predictable Pricing for Engineers &amp; Teams</h2>
+          <p>Get started for free forever. Upgrade when your team is ready for unlimited AI generations and enterprise PostgreSQL scale.</p>
+        </div>
+
+        <div class="pricing-billing-switch">
+          <span>Monthly Billing</span>
+          <label class="billing-toggle">
+            <input type="checkbox" id="pricingBillingToggle" ${isAnnual ? 'checked' : ''}>
+            <span class="billing-slider"></span>
+          </label>
+          <span>Annual Billing</span>
+          <span class="discount-badge">Save 20%</span>
+        </div>
+
+        <div class="pricing-grid">
+          <div class="pricing-card">
+            <h3>Community Free</h3>
+            <div class="plan-desc">For individual developers, students, and open-source contributors.</div>
+            <div class="pricing-price">
+              <span class="amount">$0</span>
+              <span class="period">/ forever</span>
+            </div>
+            <ul class="pricing-features">
+              <li><i>✓</i> Up to 3 active projects</li>
+              <li><i>✓</i> All 10 UML diagram types with local/cloud rendering</li>
+              <li><i>✓</i> AI Requirement &amp; SRS generation (50 runs/mo)</li>
+              <li><i>✓</i> Agile sprint board &amp; bug tracker</li>
+              <li><i>✓</i> Public GitHub repository integration</li>
+            </ul>
+            <button class="btn block" id="planFreeBtn">${state.user ? 'Active Free Plan' : 'Get Started Free'}</button>
+          </div>
+
+          <div class="pricing-card featured">
+            <div class="popular-ribbon">Most Popular</div>
+            <h3>Pro Developer</h3>
+            <div class="plan-desc">For serious software engineers, tech leads, and fast-moving teams.</div>
+            <div class="pricing-price">
+              <span class="amount" id="proPriceDisplay">${proPrice}</span>
+              <span class="period">/ month ${isAnnual ? '(billed annually)' : ''}</span>
+            </div>
+            <ul class="pricing-features">
+              <li><i>✓</i> <strong>Unlimited</strong> projects &amp; sprints</li>
+              <li><i>✓</i> <strong>Unlimited</strong> AI Requirement &amp; SRS generations</li>
+              <li><i>✓</i> Private GitHub repositories &amp; automated PR reviews</li>
+              <li><i>✓</i> High-resolution SVG &amp; PlantUML (.puml) source downloads</li>
+              <li><i>✓</i> Complete Traceability Matrix exports &amp; audit history</li>
+              <li><i>✓</i> Automated Self-Healing model repair loop</li>
+              <li><i>✓</i> Priority PlantUML vector cloud rendering</li>
+            </ul>
+            <button class="btn primary block" id="planProBtn">⚡ Upgrade to Pro (14-Day Free Trial)</button>
+          </div>
+
+          <div class="pricing-card">
+            <h3>Enterprise Organization</h3>
+            <div class="plan-desc">For large teams and companies requiring dedicated databases and compliance.</div>
+            <div class="pricing-price">
+              <span class="amount" id="entPriceDisplay">${entPrice}</span>
+              <span class="period">/ team / month</span>
+            </div>
+            <ul class="pricing-features">
+              <li><i>✓</i> Everything in Pro plan</li>
+              <li><i>✓</i> Dedicated <strong>PostgreSQL database</strong> with JSONB</li>
+              <li><i>✓</i> Google &amp; GitHub OAuth SSO team login</li>
+              <li><i>✓</i> Custom corporate UML validation rule sets</li>
+              <li><i>✓</i> 99.9% Uptime SLA &amp; private deployment</li>
+              <li><i>✓</i> 24/7 dedicated engineering support</li>
+            </ul>
+            <button class="btn block" id="planEntBtn">Contact Sales &amp; Demo</button>
+          </div>
+        </div>
+
+        <div style="margin-top: 36px; padding: 20px; background: #f6faff; border: 1px solid #dce8f5; border-radius: 12px;">
+          <h4 style="color:#112f60;margin-bottom:8px">Frequently Asked Questions</h4>
+          <div style="display:grid;gap:12px;font-size:13px;color:#496b99;">
+            <div><strong>Can I switch between plans anytime?</strong> Yes, you can upgrade, downgrade, or cancel at any time with instant effect.</div>
+            <div><strong>Do I need a credit card for the Free plan?</strong> No credit card required. You can sign up with email or Google/GitHub and start immediately.</div>
+            <div><strong>Is my code private and secure?</strong> Absolutely. EngineerOS never uses your proprietary code to train external AI models.</div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (currentTab === 'docs') {
+      return `
+        <div class="showcase-hero">
+          <span class="badge">DOCUMENTATION</span>
+          <h2>EngineerOS Architecture &amp; Developer Guide</h2>
+          <p>Learn how requirements, the course rule engine, and PlantUML generators communicate seamlessly.</p>
+        </div>
+
+        <div class="docs-section">
+          <h3><span>1.</span> Quickstart in 5 Minutes</h3>
+          <p>Get your project up and running with AI-assisted software engineering intelligence:</p>
+          <ol style="color:#4e6c97;font-size:13.5px;line-height:1.7;padding-left:20px;margin-bottom:14px">
+            <li><strong>Select or create a project</strong>: Choose an active project or click <em>+ New Project</em>.</li>
+            <li><strong>Define requirements</strong>: Use the <em>Requirements</em> tab or click <em>Analyze Requirements</em> to generate formal IEEE 830 stories and acceptance criteria.</li>
+            <li><strong>Explore UML diagrams</strong>: Switch to <em>UML Diagrams</em>, click <em>⚡ Load EcoBangla Preset</em> (or paste your own description), and click <em>Analyze &amp; Extract System Model</em>.</li>
+            <li><strong>Validate &amp; Repair</strong>: The Rule Engine validates your diagrams with zero violations. If rules fail, one-click <em>Auto-Repair</em> fixes the model.</li>
+            <li><strong>Connect GitHub</strong>: Link your GitHub profile to track commits, PRs, diffs, and workflow builds.</li>
+          </ol>
+        </div>
+
+        <div class="docs-section">
+          <h3><span>2.</span> Core REST API Endpoints</h3>
+          <p>EngineerOS exposes a modular JSON REST API for automated workflows:</p>
+          <table class="docs-table">
+            <thead>
+              <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>/api/uml/analyze</code></td><td>POST</td><td>Extracts structured System Model JSON from requirements</td></tr>
+              <tr><td><code>/api/uml/generate</code></td><td>POST</td><td>Generates PlantUML source for any of 10 diagram types</td></tr>
+              <tr><td><code>/api/uml/validate</code></td><td>POST</td><td>Runs diagram against the Course Rule Engine</td></tr>
+              <tr><td><code>/api/uml/render</code></td><td>POST</td><td>Compiles PlantUML to high-resolution vector SVG</td></tr>
+              <tr><td><code>/api/uml/repair</code></td><td>POST</td><td>Self-healing loop fixing model rule violations</td></tr>
+              <tr><td><code>/api/projects</code></td><td>GET / POST</td><td>Project management and membership</td></tr>
+              <tr><td><code>/api/auth/providers</code></td><td>GET</td><td>Checks Google &amp; GitHub OAuth availability</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="docs-section">
+          <h3><span>3.</span> Dual PlantUML Rendering Architecture</h3>
+          <p>EngineerOS uses an automatic dual-mode rendering pipeline: if local <code>java -jar tools/plantuml/plantuml.jar</code> is available, it renders locally; otherwise, it encodes the diagram via <code>plantuml-encoder</code> and fetches clean vector SVGs from the secure PlantUML server with zero setup required.</p>
+        </div>
+      `;
+    }
+
+    if (currentTab === 'about') {
+      return `
+        <div class="showcase-hero">
+          <span class="badge">ABOUT ENGINEEROS</span>
+          <h2>Bridging Engineering Rigor with AI Intelligence</h2>
+          <p>EngineerOS is built to eliminate the chaos of modern software delivery by bringing requirements, architecture, code, and project management together.</p>
+        </div>
+
+        <div class="about-stats-grid">
+          <div class="about-stat-box">
+            <strong>10</strong>
+            <span>Synchronized UML Diagram Types</span>
+          </div>
+          <div class="about-stat-box">
+            <strong>100%</strong>
+            <span>Course Rule Engine Coverage</span>
+          </div>
+          <div class="about-stat-box">
+            <strong>PostgreSQL</strong>
+            <span>Native JSONB &amp; SQLite Support</span>
+          </div>
+          <div class="about-stat-box">
+            <strong>Live Sync</strong>
+            <span>GitHub Bi-directional Integration</span>
+          </div>
+        </div>
+
+        <div style="background:#f9fbfe;border:1px solid #dceaf7;border-radius:12px;padding:20px;margin-top:20px;font-size:13.5px;color:#496996;line-height:1.6">
+          <h4 style="color:#112a58;margin-bottom:8px">System Environment &amp; Status</h4>
+          <div>• <strong>Application:</strong> EngineerOS v1.0.0</div>
+          <div>• <strong>Server URL:</strong> <code>http://localhost:3000</code></div>
+          <div>• <strong>Authentication:</strong> JWT + Google OAuth + GitHub OAuth</div>
+          <div>• <strong>Rendering Engine:</strong> Dual PlantUML (Local JAR + Online Vector Encoder)</div>
+          <div>• <strong>System Status:</strong> <span style="color:#12b76a;font-weight:700">● All Systems Operational</span></div>
+        </div>
+      `;
+    }
+
+    return '';
+  }
+
+  function mountShowcaseUI() {
+    const headerHtml = `
+      <div class="showcase-header">
+        <div class="showcase-tabs" id="showcaseTabs">
+          ${tabs.map((t) => `<button type="button" class="showcase-tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`).join('')}
+        </div>
+      </div>
+    `;
+
+    openModal('EngineerOS Platform', `
+      ${headerHtml}
+      <div class="showcase-body" id="showcaseBody">
+        ${renderShowcaseContent()}
+      </div>
+    `, () => {
+      // Wire tab switches
+      el('showcaseTabs')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.showcase-tab');
+        if (!btn) return;
+        currentTab = btn.dataset.tab;
+        el('showcaseTabs').querySelectorAll('.showcase-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === currentTab));
+        const body = el('showcaseBody');
+        if (body) {
+          body.innerHTML = renderShowcaseContent();
+          wireShowcaseInteractive();
+        }
+      });
+
+      wireShowcaseInteractive();
+    }, true);
+  }
+
+  function wireShowcaseInteractive() {
+    // Billing switcher
+    const toggle = el('pricingBillingToggle');
+    if (toggle) {
+      toggle.addEventListener('change', (e) => {
+        isAnnual = e.target.checked;
+        const proDisplay = el('proPriceDisplay');
+        const entDisplay = el('entPriceDisplay');
+        if (proDisplay) proDisplay.textContent = isAnnual ? '$24' : '$29';
+        if (entDisplay) entDisplay.textContent = isAnnual ? '$79' : '$99';
+      });
+    }
+
+    // Free plan button
+    el('planFreeBtn')?.addEventListener('click', () => {
+      if (state.user) {
+        toast('You are currently on the Community Free tier.');
+        closeModal();
+      } else {
+        closeModal();
+        setAuthMode('register');
+        el('authName')?.focus();
+      }
+    });
+
+    // Pro plan button
+    el('planProBtn')?.addEventListener('click', () => {
+      toast('🎉 Welcome to EngineerOS Pro! Unlimited AI & vector exports unlocked.');
+      closeModal();
+    });
+
+    // Enterprise plan button
+    el('planEntBtn')?.addEventListener('click', () => {
+      toast('📩 Thank you! An EngineerOS enterprise representative will contact you.');
+      closeModal();
+    });
+  }
+
+  mountShowcaseUI();
+}
+
+function setupNavigationLinks() {
+  document.querySelectorAll('a[href^="#features"], a[href^="#pricing"], a[href^="#docs"], a[href^="#about"]').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = link.getAttribute('href').replace(/^#/, '');
+      openShowcaseModal(target);
+    });
+  });
+
+  document.querySelectorAll('.help-link').forEach((link) => {
+    link.style.cursor = 'pointer';
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      openShowcaseModal('docs');
+    });
+  });
+}
+
 // -------------------------------------------------------------- start -----
 
 (async function init() {
-  const callbackParams = new URLSearchParams(location.hash.slice(1));
-  const socialToken = callbackParams.get('auth_token');
-  const socialError = callbackParams.get('auth_error');
+  const hashParams = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
+  const searchParams = new URLSearchParams(location.search);
+  const socialToken = hashParams.get('auth_token') || searchParams.get('auth_token');
+  const socialError = hashParams.get('auth_error') || searchParams.get('auth_error');
+
   if (socialToken) {
     token.set(socialToken);
-    history.replaceState(null, '', location.pathname + location.search);
+    history.replaceState(null, '', location.pathname);
   }
   if (socialError) {
     el('authError').textContent = socialError;
     el('authError').classList.remove('hidden');
-    history.replaceState(null, '', location.pathname + location.search);
+    history.replaceState(null, '', location.pathname);
   }
+
+  setupNavigationLinks();
+
+  window.addEventListener('hashchange', () => {
+    const hash = location.hash.replace(/^#\/?/, '');
+    if (['features', 'pricing', 'docs', 'about'].includes(hash)) {
+      openShowcaseModal(hash);
+    }
+  });
+
+  const initialHash = location.hash.replace(/^#\/?/, '');
+  if (['features', 'pricing', 'docs', 'about'].includes(initialHash)) {
+    openShowcaseModal(initialHash);
+  }
+
   if (!token.get()) return;
   try {
     const { user } = await api.get('/auth/me');
@@ -2337,3 +2748,4 @@ async function renderTeam() {
     token.clear();
   }
 })();
+
