@@ -216,6 +216,7 @@ router.post('/ask', (req, res) => {
     answer = workload.size
       ? `Open workload by person: ${[...workload.entries()].sort((a, b) => b[1] - a[1]).map(([n, p]) => `${n} (${p} pts)`).join(', ')}.`
       : 'No open tasks are currently assigned.';
+<<<<<<< HEAD
   } else if (match('risk', 'blocked', 'concern', 'warning', 'threat')) {
     answer = `Main risks: ${plural(openBugs.filter((b) => b.severity === 'critical').length, 'critical defect')} open, ${plural(lowQuality, 'requirement')} below a quality score of 60, and ${plural(reviewTasks, 'task')} waiting in review.`;
   } else if (match('architecture', 'database', 'schema', 'sql', 'tech stack', 'tables', 'pattern', 'stack', 'design')) {
@@ -237,6 +238,17 @@ router.post('/ask', (req, res) => {
     summaryBits.push(`Delivery is ${doneTasks}/${tasks.length || 0} tasks complete, or ${totalPoints ? Math.round((donePoints / totalPoints) * 100) : 0}% of the story points.`);
     summaryBits.push(`Average requirement quality is ${avgQuality}/100, and ${members.length} team member${members.length === 1 ? '' : 's'} are on the project.`);
     answer = `${summaryBits.join(' ')} If you want more detail, ask about progress, defects, requirements, workload, risks, or architecture.`;
+=======
+  } else if (match('risk', 'blocked', 'concern')) {
+    const critical = bugs.filter((b) => b.severity === 'critical' && b.status !== 'resolved').length;
+    const lowQuality = requirements.filter((r) => r.quality < 60).length;
+    answer = `Main risks: ${plural(critical, 'critical defect')} open, ${plural(lowQuality, 'requirement')} below a quality score of 60, and ${plural(tasks.filter((t) => t.status === 'review').length, 'task')} waiting in review.`;
+  } else if (match('github', 'git', 'commit', 'pr', 'pull request', 'repo', 'action', 'workflow')) {
+    const repo = req.project.github_repo || 'arif-404-hub/OS';
+    answer = `Project "${req.project.name}" is linked to GitHub repository "${repo}". Open the ⌘ GitHub tab to view live repositories, recent commits, pull requests, issues, and CI/CD workflow runs.`;
+  } else {
+    answer = `I can answer questions about progress, requirements, defects, workload, risks and GitHub integration on "${req.project.name}". Try asking "what is our progress?" or "how many bugs are open?".`;
+>>>>>>> ece38a959b563e6b64cb427046c43b0ff0c2acb7
   }
 
   res.json({ question: req.body.question, answer });

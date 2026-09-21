@@ -6,12 +6,18 @@ import './db.js';
 import { router as authRouter } from './routes/auth.js';
 import { router as projectsRouter } from './routes/projects.js';
 import { router as requirementsRouter } from './routes/requirements.js';
+import { router as organizationsRouter } from './routes/organizations.js';
 import { router as workRouter } from './routes/work.js';
 import { router as intelRouter } from './routes/intel.js';
-import { router as organizationsRouter } from './routes/organizations.js';
+import { router as githubRouter } from './routes/github.js';
+import umlRouter from './routes/uml.js';
+import { initPostgres } from './pg.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
+
+// Initialize PostgreSQL connection pool if configured
+initPostgres().catch(err => console.warn('[PostgreSQL Init]', err.message));
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(join(root, 'public')));
@@ -23,10 +29,11 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/organizations', organizationsRouter);
 apiRouter.use('/projects', projectsRouter);
 // Project-scoped routers each re-check membership through loadProject.
-apiRouter.use('/projects/:pid/requirements', requirementsRouter);
-apiRouter.use('/projects/:pid', workRouter);
-apiRouter.use('/projects/:pid', intelRouter);
-apiRouter.use((_req, res) => res.status(404).json({ error: 'Unknown API endpoint.' }));
+app.use('/api/projects/:pid/requirements', requirementsRouter);
+app.use('/api/projects/:pid', workRouter);
+app.use('/api/projects/:pid', intelRouter);
+app.use('/api/projects/:pid/github', githubRouter);
+app.use('/api/uml', umlRouter);
 
 app.use('/api', apiRouter);
 app.use('/OS/api', apiRouter);

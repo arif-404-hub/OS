@@ -56,9 +56,10 @@ if (get('SELECT id FROM projects WHERE name = ? AND owner_id = ?', 'EngineerOS',
 }
 
 const { lastInsertRowid: pid } = run(
-  'INSERT INTO projects (name, description, owner_id) VALUES (?, ?, ?)',
+  'INSERT INTO projects (name, description, github_repo, owner_id) VALUES (?, ?, ?, ?)',
   'EngineerOS',
   'A unified SDLC platform that replaces disconnected tools with one AI-assisted workspace, covering requirement engineering, design, planning, development, testing and analytics.',
+  'arif-404-hub/OS',
   demo.id
 );
 
