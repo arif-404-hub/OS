@@ -61,54 +61,6 @@ function socialUser(provider, profile, accessToken = '') {
 
 router.get('/providers', (_req, res) => res.json({ google: configured('google'), github: configured('github') }));
 
-router.get('/:provider', (req, res) => {
-  const provider = req.params.provider;
-  if (!OAUTH_PROVIDERS.has(provider)) return res.status(404).json({ error: 'Unknown authentication provider.' });
-  if (!configured(provider)) return res.status(503).json({ error: `${provider} login is not configured on this server.` });
-  const state = randomBytes(24).toString('hex');
-  oauthStates.set(state, { provider, expires: Date.now() + 10 * 60 * 1000 });
-  const settings = providerSettings(provider);
-  const params = { client_id: settings.clientId, redirect_uri: settings.redirect, response_type: 'code', scope: settings.scope, state };
-  res.redirect(`${settings.authorize}?${new URLSearchParams(params)}`);
-});
-
-router.get('/:provider/callback', async (req, res) => {
-  const provider = req.params.provider;
-  const saved = oauthStates.get(req.query.state);
-  oauthStates.delete(req.query.state);
-  if (!OAUTH_PROVIDERS.has(provider) || !saved || saved.provider !== provider || saved.expires < Date.now()) {
-    return res.redirect(oauthRedirect({ auth_error: 'Invalid or expired social login session.' }));
-  }
-  if (req.query.error) return res.redirect(oauthRedirect({ auth_error: 'Social login was cancelled.' }));
-
-  try {
-    const settings = providerSettings(provider);
-    const tokenResponse = await fetch(settings.token, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: settings.clientId, client_secret: settings.clientSecret, code: req.query.code, redirect_uri: settings.redirect }).toString(),
-      signal: AbortSignal.timeout(15000),
-    });
-    const tokenData = await tokenResponse.json();
-    if (!tokenResponse.ok || !tokenData.access_token) throw new Error('The provider did not issue an access token.');
-    const headers = { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json', 'User-Agent': 'EngineerOS' };
-    const profileResponse = await fetch(provider === 'google' ? 'https://openidconnect.googleapis.com/v1/userinfo' : 'https://api.github.com/user', { headers, signal: AbortSignal.timeout(15000) });
-    const profile = await profileResponse.json();
-    if (!profileResponse.ok) throw new Error('Could not read the social account profile.');
-    if (provider === 'google' && profile.email_verified !== true) throw new Error('Google did not verify this email address.');
-    if (provider === 'github') {
-      const emailsResponse = await fetch('https://api.github.com/user/emails', { headers, signal: AbortSignal.timeout(15000) });
-      const emails = await emailsResponse.json();
-      if (!emailsResponse.ok) throw new Error('Could not read the GitHub account email addresses.');
-      profile.email = emails.find((email) => email.primary && email.verified)?.email || emails.find((email) => email.verified)?.email;
-    }
-    const user = socialUser(provider, profile, tokenData.access_token);
-    return res.redirect(oauthRedirect({ auth_token: issueToken(user) }));
-  } catch (error) {
-    return res.redirect(oauthRedirect({ auth_error: error.message || 'Social login failed.' }));
-  }
-});
-
 router.post('/register', (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
@@ -196,3 +148,51 @@ router.patch('/profile', requireAuth, (req, res) => {
 // Used to populate assignee pickers.
 router.get('/users', requireAuth, (_req, res) =>
   res.json(all('SELECT id, name, email, role, github_username FROM users ORDER BY name')));
+
+router.get('/:provider', (req, res) => {
+  const provider = req.params.provider;
+  if (!OAUTH_PROVIDERS.has(provider)) return res.status(404).json({ error: 'Unknown authentication provider.' });
+  if (!configured(provider)) return res.status(503).json({ error: `${provider} login is not configured on this server.` });
+  const state = randomBytes(24).toString('hex');
+  oauthStates.set(state, { provider, expires: Date.now() + 10 * 60 * 1000 });
+  const settings = providerSettings(provider);
+  const params = { client_id: settings.clientId, redirect_uri: settings.redirect, response_type: 'code', scope: settings.scope, state };
+  res.redirect(`${settings.authorize}?${new URLSearchParams(params)}`);
+});
+
+router.get('/:provider/callback', async (req, res) => {
+  const provider = req.params.provider;
+  const saved = oauthStates.get(req.query.state);
+  oauthStates.delete(req.query.state);
+  if (!OAUTH_PROVIDERS.has(provider) || !saved || saved.provider !== provider || saved.expires < Date.now()) {
+    return res.redirect(oauthRedirect({ auth_error: 'Invalid or expired social login session.' }));
+  }
+  if (req.query.error) return res.redirect(oauthRedirect({ auth_error: 'Social login was cancelled.' }));
+
+  try {
+    const settings = providerSettings(provider);
+    const tokenResponse = await fetch(settings.token, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: settings.clientId, client_secret: settings.clientSecret, code: req.query.code, redirect_uri: settings.redirect }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    const tokenData = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenData.access_token) throw new Error('The provider did not issue an access token.');
+    const headers = { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json', 'User-Agent': 'EngineerOS' };
+    const profileResponse = await fetch(provider === 'google' ? 'https://openidconnect.googleapis.com/v1/userinfo' : 'https://api.github.com/user', { headers, signal: AbortSignal.timeout(15000) });
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok) throw new Error('Could not read the social account profile.');
+    if (provider === 'google' && profile.email_verified !== true) throw new Error('Google did not verify this email address.');
+    if (provider === 'github') {
+      const emailsResponse = await fetch('https://api.github.com/user/emails', { headers, signal: AbortSignal.timeout(15000) });
+      const emails = await emailsResponse.json();
+      if (!emailsResponse.ok) throw new Error('Could not read the GitHub account email addresses.');
+      profile.email = emails.find((email) => email.primary && email.verified)?.email || emails.find((email) => email.verified)?.email;
+    }
+    const user = socialUser(provider, profile, tokenData.access_token);
+    return res.redirect(oauthRedirect({ auth_token: issueToken(user) }));
+  } catch (error) {
+    return res.redirect(oauthRedirect({ auth_error: error.message || 'Social login failed.' }));
+  }
+});

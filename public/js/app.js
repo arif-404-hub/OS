@@ -122,8 +122,71 @@ async function startApp() {
   el('topUserName').textContent = state.user.name;
   el('topAvatar').textContent = state.user.name.charAt(0).toUpperCase();
 
+  ['userName', 'userAvatar', 'topUserName', 'topAvatar'].forEach((id) => {
+    const node = el(id);
+    if (node) {
+      node.style.cursor = 'pointer';
+      node.title = 'Click to edit profile & GitHub identity';
+      node.onclick = openProfileModal;
+    }
+  });
+
   state.users = await api.get('/auth/users').catch(() => []);
   await loadProjects();
+}
+
+function openProfileModal() {
+  openModal('User Profile & GitHub Identity', `
+    <p class="muted" style="margin-top:0;font-size:13px">Manage your developer profile and link your GitHub account to discover all your projects.</p>
+    <div class="field">
+      <label for="profName">Display Name</label>
+      <input id="profName" value="${esc(state.user.name)}">
+    </div>
+    <div class="field">
+      <label for="profEmail">Email</label>
+      <input id="profEmail" value="${esc(state.user.email)}" disabled style="opacity:0.7">
+    </div>
+    <div class="field">
+      <label for="profRole">Role</label>
+      <input id="profRole" value="${esc(state.user.role)}" disabled style="opacity:0.7">
+    </div>
+    <div class="field">
+      <label for="profGithub">GitHub Username <span class="muted">(your GitHub profile handle)</span></label>
+      <input id="profGithub" value="${esc(state.user.github_username || '')}" placeholder="e.g. purnata-c or octocat">
+      <p class="hint" style="text-align:left;margin-top:4px">Allows EngineerOS to automatically list all your repositories across your projects.</p>
+    </div>
+    <div class="field">
+      <label for="profToken">Personal Access Token (PAT) <span class="muted">(optional, for private repos & workflows)</span></label>
+      <input id="profToken" type="password" placeholder="${state.user.has_github_token ? '•••••••••••••••• (saved)' : 'ghp_xxxxxxxxxxxxxxxxxxxx'}" autocomplete="new-password">
+      <p class="hint" style="text-align:left;margin-top:4px">Stored securely to access private repositories, open PRs, and trigger actions.</p>
+    </div>
+    <p class="error hidden" id="profError"></p>
+    <button class="btn primary block" id="profSave">Save Profile</button>
+  `, () => {
+    el('profSave').addEventListener('click', async () => {
+      const name = el('profName').value.trim();
+      const githubUsername = el('profGithub').value.trim();
+      const githubToken = el('profToken').value.trim();
+      try {
+        const res = await api.patch('/auth/profile', {
+          name,
+          github_username: githubUsername,
+          ...(githubToken ? { github_token: githubToken } : {}),
+        });
+        state.user = res.user;
+        el('userName').textContent = state.user.name;
+        el('topUserName').textContent = state.user.name;
+        el('userAvatar').textContent = state.user.name.charAt(0).toUpperCase();
+        el('topAvatar').textContent = state.user.name.charAt(0).toUpperCase();
+        closeModal();
+        toast('Profile updated!');
+        if (state.view === 'github') render();
+      } catch (err) {
+        el('profError').textContent = err.message;
+        el('profError').classList.remove('hidden');
+      }
+    });
+  });
 }
 
 async function loadProjects() {
@@ -151,18 +214,27 @@ el('projectSelect').addEventListener('change', (e) => selectProject(Number(e.tar
 el('newProjectBtn').addEventListener('click', () => newProjectDialog(false));
 
 function newProjectDialog(first) {
+  const suggestedSlug = state.user?.github_username
+    ? `${state.user.github_username}/`
+    : '';
+
   openModal(first ? 'Create your first project' : 'New project', `
     <div class="field">
       <label for="pName">Project name</label>
-      <input id="pName" placeholder="EngineerOS">
+      <input id="pName" placeholder="e.g. Eco Bangla, EngineerOS">
     </div>
     <div class="field">
       <label for="pDesc">Description</label>
-      <textarea id="pDesc" rows="6" placeholder="What the system does, who uses it, the main workflows, and why it exists."></textarea>
+      <textarea id="pDesc" rows="5" placeholder="What the system does, who uses it, the main workflows, and why it exists."></textarea>
     </div>
     <div class="field">
       <label for="pType">Project type / domain <span class="muted">(optional)</span></label>
       <input id="pType" placeholder="e.g. Smart waste management, healthcare, fintech">
+    </div>
+    <div class="field">
+      <label for="pRepo">GitHub Repository <span class="muted">(optional, owner/repo)</span></label>
+      <input id="pRepo" placeholder="${suggestedSlug ? `${suggestedSlug}my-repo` : 'e.g. username/repo or https://github.com/owner/repo'}">
+      <p class="hint" style="text-align:left;margin-top:4px">Each project can link to its own repository under your profile. You can also pick or change it later.</p>
     </div>
     <p class="error hidden" id="pError"></p>
     <button class="btn primary block" id="pSave">Create project</button>
@@ -170,7 +242,12 @@ function newProjectDialog(first) {
     el('pName').focus();
     el('pSave').addEventListener('click', async () => {
       try {
-        const created = await api.post('/projects', { name: el('pName').value, description: el('pDesc').value, project_type: el('pType').value });
+        const created = await api.post('/projects', {
+          name: el('pName').value,
+          description: el('pDesc').value,
+          project_type: el('pType').value,
+          github_repo: el('pRepo').value.trim(),
+        });
         closeModal();
         state.project = created;
         await loadProjects();
@@ -342,15 +419,25 @@ async function renderDashboard() {
 }
 
 function editProjectDialog() {
-  openModal('Edit project description', `
+  openModal('Edit project overview & repository', `
     <div class="field"><label for="editName">Project name</label><input id="editName" value="${esc(state.project.name)}"></div>
-    <div class="field"><label for="editDesc">Project description</label><textarea id="editDesc" rows="8">${esc(state.project.description || '')}</textarea></div>
+    <div class="field"><label for="editDesc">Project description</label><textarea id="editDesc" rows="6">${esc(state.project.description || '')}</textarea></div>
     <div class="field"><label for="editType">Project type / domain <span class="muted">(optional)</span></label><input id="editType" value="${esc(state.project.project_type || '')}"></div>
+    <div class="field">
+      <label for="editRepo">GitHub Repository <span class="muted">(owner/repo)</span></label>
+      <input id="editRepo" value="${esc(state.project.github_repo || '')}" placeholder="e.g. username/repository">
+      <p class="hint" style="text-align:left;margin-top:4px">Each project can connect to a distinct repository under your profile or organization.</p>
+    </div>
     <p class="error hidden" id="editError"></p><button class="btn primary block" id="editSave">Save changes</button>
   `, () => {
     el('editSave').addEventListener('click', async () => {
       try {
-        state.project = await api.patch(`/projects/${state.project.id}`, { name: el('editName').value, description: el('editDesc').value, project_type: el('editType').value });
+        state.project = await api.patch(`/projects/${state.project.id}`, {
+          name: el('editName').value,
+          description: el('editDesc').value,
+          project_type: el('editType').value,
+          github_repo: el('editRepo').value.trim(),
+        });
         closeModal();
         toast('Project overview updated.');
         render();
@@ -1008,16 +1095,23 @@ const LANG_COLORS = {
 };
 
 async function renderGitHub() {
-  const [repo, config] = await Promise.all([
+  const [repo, config, userRepos] = await Promise.all([
     api.get(`${P()}/github/repo`),
     api.get(`${P()}/github/config`),
+    api.get(`${P()}/github/user-repos`).catch(() => []),
   ]);
+
+  if (!config.isConfigured) {
+    renderGHUnconfigured(config, userRepos);
+    return;
+  }
 
   if (!ghBranch) ghBranch = repo.default_branch || 'main';
 
   el('topbarActions').innerHTML = `
     <button class="btn ghost small" id="ghRefreshBtn" title="Refresh GitHub data">↻ Refresh</button>
-    <button class="btn primary small" id="ghConfigBtn">⚙ Configure Repo</button>
+    <button class="btn ghost small" id="ghSwitchBtn" title="Switch to another repository">⇄ Switch Repo</button>
+    <button class="btn primary small" id="ghConfigBtn">⚙ Configure</button>
   `;
 
   el('view').innerHTML = `
@@ -1026,13 +1120,15 @@ async function renderGitHub() {
         <div>
           <div class="gh-repo-title">
             <span style="font-size:24px">⌘</span>
-            <a href="${esc(repo.html_url)}" target="_blank" rel="noopener">${esc(repo.full_name || 'arif-404-hub/OS')}</a>
+            <a href="${esc(repo.html_url)}" target="_blank" rel="noopener">${esc(repo.full_name || config.activeSlug)}</a>
             <span class="pill ${repo.private ? 'amber' : 'green'}">${repo.private ? 'Private' : 'Public'}</span>
             <span class="pill blue">${repo.isLive ? 'Live API' : 'Cached / Fallback'}</span>
+            ${config.userGithubUsername ? `<span class="pill grey" title="User GitHub Profile">@${esc(config.userGithubUsername)}</span>` : ''}
           </div>
           <p class="muted" style="margin:6px 0 0;font-size:13.5px">${esc(repo.description || 'No repository description.')}</p>
         </div>
-        <div class="row">
+        <div class="row" style="gap:8px">
+          <button class="btn ghost small" id="ghChangeRepoQuickBtn">Change Project Repo</button>
           <a class="btn small" href="${esc(repo.html_url)}" target="_blank" rel="noopener">↗ Open GitHub</a>
         </div>
       </div>
@@ -1062,7 +1158,9 @@ async function renderGitHub() {
 
   // Bind topbar actions
   el('ghRefreshBtn')?.addEventListener('click', () => renderGitHub());
-  el('ghConfigBtn')?.addEventListener('click', () => openGHConfigModal(config));
+  el('ghSwitchBtn')?.addEventListener('click', () => openGHConfigModal(config, userRepos));
+  el('ghChangeRepoQuickBtn')?.addEventListener('click', () => openGHConfigModal(config, userRepos));
+  el('ghConfigBtn')?.addEventListener('click', () => openGHConfigModal(config, userRepos));
 
   // Bind subnav tabs
   el('ghSubNav')?.addEventListener('click', (e) => {
@@ -1070,20 +1168,117 @@ async function renderGitHub() {
     if (!tabBtn) return;
     ghTab = tabBtn.dataset.tab;
     document.querySelectorAll('.gh-tab').forEach((t) => t.classList.toggle('active', t === tabBtn));
-    renderGHTabContent(repo, config);
+    renderGHTabContent(repo, config, userRepos);
   });
 
-  await renderGHTabContent(repo, config);
+  await renderGHTabContent(repo, config, userRepos);
 }
 
-async function renderGHTabContent(repo, config) {
+function renderGHUnconfigured(config, userRepos) {
+  el('topbarActions').innerHTML = `
+    <button class="btn ghost small" id="ghUnconfProfileBtn">Profile &amp; GitHub Account</button>
+  `;
+
+  el('view').innerHTML = `
+    <div class="card" style="margin-bottom:16px;padding:32px 24px">
+      <div style="max-width:760px;margin:0 auto;text-align:center">
+        <div style="font-size:44px;line-height:1;margin-bottom:14px">⌥</div>
+        <h2 style="margin:0 0 8px">Connect GitHub to "${esc(state.project.name)}"</h2>
+        <p class="muted" style="font-size:14px;line-height:1.5;margin:0 0 20px">
+          In EngineerOS, each project connects to its own appropriate GitHub repository.
+          Select a repository from your profile below, or enter any public/private repository.
+        </p>
+
+        <div style="display:inline-flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);border-radius:24px;padding:6px 16px;margin-bottom:24px;font-size:13px">
+          <span>GitHub Profile: <strong>@${esc(config.userGithubUsername || 'None linked')}</strong></span>
+          <button class="btn ghost small" id="ghLinkProfileBtn" style="padding:2px 8px;font-size:11px">
+            ${config.userGithubUsername ? 'Change Profile' : '+ Link GitHub Username'}
+          </button>
+        </div>
+
+        ${userRepos && userRepos.length ? `
+          <div style="text-align:left;margin-bottom:28px">
+            <div class="panel-heading" style="margin-bottom:10px">
+              <h4 style="margin:0">Repositories in your profile (@${esc(config.userGithubUsername)}):</h4>
+              <span class="muted" style="font-size:12px">${userRepos.length} available</span>
+            </div>
+            <div class="gh-user-repos-grid">
+              ${userRepos.map((r) => `
+                <div class="gh-user-repo-card">
+                  <div style="min-width:0;flex:1">
+                    <div class="row" style="gap:6px;align-items:center">
+                      <strong style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.full_name)}</strong>
+                      <span class="pill ${r.private ? 'amber' : 'green'}" style="font-size:9.5px">${r.private ? 'Private' : 'Public'}</span>
+                    </div>
+                    <p class="muted" style="margin:4px 0 0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.description || 'No description.')}</p>
+                  </div>
+                  <button class="btn primary small" data-pick-repo="${esc(r.full_name)}">Connect</button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="card" style="text-align:left;background:var(--bg-2);border:1px solid var(--line);margin:0;padding:20px">
+          <h4 style="margin:0 0 6px">Or enter repository manually:</h4>
+          <p class="muted" style="margin:0 0 14px;font-size:13px">Enter the GitHub owner and repository name for this specific project.</p>
+          <div class="field">
+            <label for="unconfRepoInput">Repository (owner/repo)</label>
+            <input id="unconfRepoInput" value="${esc(config.suggestedRepo || '')}" placeholder="e.g. ${esc(config.suggestedRepo || 'owner/repo')}">
+          </div>
+          <div class="field">
+            <label for="unconfTokenInput">Personal Access Token (PAT) <span class="muted">(optional for private repos)</span></label>
+            <input id="unconfTokenInput" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="new-password">
+          </div>
+          <p class="error hidden" id="unconfError"></p>
+          <button class="btn primary block" id="unconfSave">Connect &amp; Open GitHub</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  el('ghUnconfProfileBtn')?.addEventListener('click', openProfileModal);
+  el('ghLinkProfileBtn')?.addEventListener('click', openProfileModal);
+
+  el('view').querySelectorAll('[data-pick-repo]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api.post(`${P()}/github/config`, { repo: btn.dataset.pickRepo });
+        toast(`Connected to "${btn.dataset.pickRepo}"!`);
+        renderGitHub();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+
+  el('unconfSave')?.addEventListener('click', async () => {
+    const repoVal = el('unconfRepoInput').value.trim();
+    const tokenVal = el('unconfTokenInput').value.trim();
+    if (!repoVal) {
+      el('unconfError').textContent = 'Please enter a repository in "owner/repo" format.';
+      el('unconfError').classList.remove('hidden');
+      return;
+    }
+    try {
+      await api.post(`${P()}/github/config`, { repo: repoVal, token: tokenVal });
+      toast(`Connected to "${repoVal}"!`);
+      renderGitHub();
+    } catch (err) {
+      el('unconfError').textContent = err.message;
+      el('unconfError').classList.remove('hidden');
+    }
+  });
+}
+
+async function renderGHTabContent(repo, config, userRepos = []) {
   const container = el('ghTabContent');
   if (!container) return;
   container.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
 
   try {
     if (ghTab === 'repos') {
-      await renderGHReposTab(container, repo, config);
+      await renderGHReposTab(container, repo, config, userRepos);
     } else if (ghTab === 'commits') {
       await renderGHCommitsTab(container, repo);
     } else if (ghTab === 'pulls') {
@@ -1099,7 +1294,7 @@ async function renderGHTabContent(repo, config) {
 }
 
 // --------------------------------------------------- sub-tab: repositories -
-async function renderGHReposTab(container, repo, config) {
+async function renderGHReposTab(container, repo, config, userRepos = []) {
   const branches = await api.get(`${P()}/github/branches`).catch(() => []);
   const langs = repo.languages || { JavaScript: 100 };
   const totalPercent = Object.values(langs).reduce((s, v) => s + v, 0) || 1;
@@ -1179,12 +1374,49 @@ async function renderGHReposTab(container, repo, config) {
 
         <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line)">
           <h3>Integration Settings</h3>
-          <p class="muted" style="font-size:13px">Connected repository: <strong>${esc(config.repo)}</strong></p>
+          <p class="muted" style="font-size:13px">Connected repository: <strong>${esc(config.repo || config.activeSlug)}</strong></p>
           <p class="muted" style="font-size:13px">Personal access token: <strong>${config.hasToken ? 'Configured (Private repo & write enabled)' : 'None (Using public API / fallback)'}</strong></p>
-          <button class="btn small primary" id="ghReposConfigBtn">Change Repository / Token</button>
+          <div class="row" style="gap:8px;margin-top:10px">
+            <button class="btn small primary" id="ghReposConfigBtn">Change Repository / Token</button>
+            <button class="btn small ghost" id="ghReposProfileBtn">Manage Profile &amp; PAT</button>
+          </div>
         </div>
       </div>
     </div>
+
+    ${userRepos && userRepos.length ? `
+      <div class="card" style="margin-top:16px">
+        <div class="panel-heading" style="margin-bottom:12px">
+          <div>
+            <h3 style="margin:0">Repositories in your GitHub Profile (@${esc(config.userGithubUsername || 'you')})</h3>
+            <p class="muted" style="margin:4px 0 0;font-size:12.5px">Have multiple projects? Easily switch this project to another repository under your profile, or connect your other projects.</p>
+          </div>
+          <button class="btn ghost small" id="ghProfileManageBtn">Manage Profile</button>
+        </div>
+        <div class="gh-user-repos-grid">
+          ${userRepos.map((r) => {
+            const isActive = r.full_name === config.activeSlug || r.full_name === repo.full_name || r.full_name === config.repo;
+            return `
+              <div class="gh-user-repo-card ${isActive ? 'active' : ''}">
+                <div style="min-width:0;flex:1">
+                  <div class="row" style="gap:6px;align-items:center">
+                    <strong style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.full_name)}</strong>
+                    <span class="pill ${r.private ? 'amber' : 'green'}" style="font-size:9.5px">${r.private ? 'Private' : 'Public'}</span>
+                    ${isActive ? '<span class="pill blue" style="font-size:9.5px">Current</span>' : ''}
+                  </div>
+                  <p class="muted" style="margin:4px 0 0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.description || 'No description.')}</p>
+                </div>
+                ${isActive ? `
+                  <span class="muted" style="font-size:12px">Active</span>
+                ` : `
+                  <button class="btn ghost small" data-switch-repo="${esc(r.full_name)}">Switch to this</button>
+                `}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
   `;
 
   container.querySelectorAll('[data-copy]').forEach((btn) => {
@@ -1199,11 +1431,25 @@ async function renderGHReposTab(container, repo, config) {
       ghBranch = btn.dataset.selectBranch;
       ghTab = 'commits';
       document.querySelectorAll('.gh-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === 'commits'));
-      renderGHTabContent(repo, config);
+      renderGHTabContent(repo, config, userRepos);
     });
   });
 
-  container.querySelector('#ghReposConfigBtn')?.addEventListener('click', () => openGHConfigModal(config));
+  container.querySelectorAll('[data-switch-repo]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api.post(`${P()}/github/config`, { repo: btn.dataset.switchRepo });
+        toast(`Switched repository to "${btn.dataset.switchRepo}"!`);
+        renderGitHub();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+
+  container.querySelector('#ghReposConfigBtn')?.addEventListener('click', () => openGHConfigModal(config, userRepos));
+  container.querySelector('#ghReposProfileBtn')?.addEventListener('click', openProfileModal);
+  container.querySelector('#ghProfileManageBtn')?.addEventListener('click', openProfileModal);
 }
 
 // ------------------------------------------------------- sub-tab: commits -
@@ -1553,21 +1799,41 @@ async function renderGHActionsTab(container, repo) {
 
 // ------------------------------------------------------------- modals --------
 
-function openGHConfigModal(config) {
+function openGHConfigModal(config, userRepos = []) {
+  const repoOptions = Array.isArray(userRepos) && userRepos.length > 0 ? `
+    <div class="field" style="margin-bottom:12px">
+      <label for="cfgQuickSelect">Quick Select from Your Profile Repositories</label>
+      <select id="cfgQuickSelect" style="width:100%;padding:8px 10px;background:var(--bg-2, #161b22);color:var(--text);border:1px solid var(--border);border-radius:6px">
+        <option value="">-- Choose from your GitHub profile --</option>
+        ${userRepos.map((r) => `<option value="${esc(r.full_name)}" ${r.full_name === config.repo ? 'selected' : ''}>${esc(r.full_name)} ${r.private ? '🔒' : '🌐'} (${esc(r.language || 'Code')})</option>`).join('')}
+      </select>
+    </div>
+  ` : '';
+
   openModal('Configure GitHub Repository', `
-    <p class="muted" style="margin-top:0;font-size:13px">Connect this EngineerOS project to a public or private GitHub repository.</p>
+    <p class="muted" style="margin-top:0;font-size:13px">Connect this EngineerOS project to its dedicated public or private GitHub repository.</p>
+    ${repoOptions}
     <div class="field">
       <label for="cfgRepo">Repository (owner/repo)</label>
-      <input id="cfgRepo" value="${esc(config.repo || 'arif-404-hub/OS')}" placeholder="e.g. arif-404-hub/OS or facebook/react">
+      <input id="cfgRepo" value="${esc(config.repo || '')}" placeholder="e.g. ${esc(config.suggestedRepo || 'owner/repo')}">
     </div>
     <div class="field">
-      <label for="cfgToken">Personal Access Token (PAT) <span class="muted">(optional for private repos & write actions)</span></label>
+      <label for="cfgToken">Personal Access Token (PAT) <span class="muted">(optional for private repos &amp; write actions)</span></label>
       <input id="cfgToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="new-password">
       <p class="hint" style="text-align:left;margin-top:4px">A token with <code>repo</code> and <code>workflow</code> scopes allows creating PRs, issues, and triggering GitHub Actions.</p>
     </div>
     <p class="error hidden" id="cfgError"></p>
     <button class="btn primary block" id="cfgSave">Save &amp; Connect</button>
   `, () => {
+    const quickSelect = el('cfgQuickSelect');
+    if (quickSelect) {
+      quickSelect.addEventListener('change', () => {
+        if (quickSelect.value) {
+          el('cfgRepo').value = quickSelect.value;
+        }
+      });
+    }
+
     el('cfgSave').addEventListener('click', async () => {
       const repoVal = el('cfgRepo').value.trim();
       const tokenVal = el('cfgToken').value.trim();
