@@ -209,17 +209,11 @@ router.post('/ask', (req, res) => {
     const critical = bugs.filter((b) => b.severity === 'critical' && b.status !== 'resolved').length;
     const lowQuality = requirements.filter((r) => r.quality < 60).length;
     answer = `Main risks: ${plural(critical, 'critical defect')} open, ${plural(lowQuality, 'requirement')} below a quality score of 60, and ${plural(tasks.filter((t) => t.status === 'review').length, 'task')} waiting in review.`;
-  } else if (match('architecture', 'database', 'schema', 'sql', 'tech stack', 'tables', 'pattern', 'stack')) {
-    const context = getProjectContext(req.project);
-    const design = getArchitectureAndDBDesign(req.project, context.generatedRequirements);
-    if (match('database', 'schema', 'tables', 'sql', 'entity', 'entities')) {
-      const names = design.schema.entities.map((e) => e.table).join(', ');
-      answer = `Database design for "${req.project.name}": ${design.schema.entities.length} normalized tables (${names}) with ${design.schema.relationships.length} foreign-key relationships. 3NF certified, with complete SQL available for PostgreSQL, MySQL, and SQLite.`;
-    } else {
-      answer = `Architecture recommendation for "${req.project.name}": ${design.architecture.pattern} (${design.architecture.primaryStyle}). Recommended tech stack: Next.js + React (Frontend), Node.js / Express (Backend), PostgreSQL 16 (Database), and Redis 7 (Caching).`;
-    }
+  } else if (match('github', 'git', 'commit', 'pr', 'pull request', 'repo', 'action', 'workflow')) {
+    const repo = req.project.github_repo || 'arif-404-hub/OS';
+    answer = `Project "${req.project.name}" is linked to GitHub repository "${repo}". Open the ⌘ GitHub tab to view live repositories, recent commits, pull requests, issues, and CI/CD workflow runs.`;
   } else {
-    answer = `I can answer questions about progress, requirements, architecture, database schema, defects, workload and risks on "${req.project.name}". Try asking "what architecture is recommended?" or "what is our database schema?".`;
+    answer = `I can answer questions about progress, requirements, defects, workload, risks and GitHub integration on "${req.project.name}". Try asking "what is our progress?" or "how many bugs are open?".`;
   }
 
   res.json({ question: req.body.question, answer });

@@ -187,26 +187,79 @@ CREATE TABLE IF NOT EXISTS activity (
 );
 `);
 
-try { db.exec("ALTER TABLE projects ADD COLUMN organization_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL"); } catch (error) {
+// Add user GitHub profile identity fields
+try { db.exec("ALTER TABLE users ADD COLUMN github_username TEXT NOT NULL DEFAULT ''"); } catch (error) {
+  if (!String(error.message).includes('duplicate column name')) throw error;
+}
+try { db.exec("ALTER TABLE users ADD COLUMN github_token TEXT NOT NULL DEFAULT ''"); } catch (error) {
   if (!String(error.message).includes('duplicate column name')) throw error;
 }
 
-for (const user of db.prepare('SELECT id, name FROM users').all()) {
-  let organization = db.prepare('SELECT id FROM organizations WHERE owner_id = ? LIMIT 1').get(user.id);
-  if (!organization) {
-    const created = db.prepare('INSERT INTO organizations (name, owner_id) VALUES (?, ?)').run(`${user.name}'s Organization`, user.id);
-    organization = { id: created.lastInsertRowid };
-    db.prepare('INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, ?)').run(organization.id, user.id, 'OWNER');
-  } else if (!db.prepare('SELECT 1 FROM organization_members WHERE organization_id = ? AND user_id = ?').get(organization.id, user.id)) {
-    db.prepare('INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, ?)').run(organization.id, user.id, 'OWNER');
-  }
-  db.prepare('UPDATE projects SET organization_id = ? WHERE owner_id = ? AND organization_id IS NULL').run(organization.id, user.id);
+// Add OAuth account token and username fields
+try { db.exec("ALTER TABLE oauth_accounts ADD COLUMN username TEXT NOT NULL DEFAULT ''"); } catch (error) {
+  if (!String(error.message).includes('duplicate column name')) throw error;
+}
+try { db.exec("ALTER TABLE oauth_accounts ADD COLUMN access_token TEXT NOT NULL DEFAULT ''"); } catch (error) {
+  if (!String(error.message).includes('duplicate column name')) throw error;
 }
 
 // Add new project context fields without rebuilding or losing existing data.
 try { db.exec("ALTER TABLE projects ADD COLUMN project_type TEXT NOT NULL DEFAULT ''"); } catch (error) {
   if (!String(error.message).includes('duplicate column name')) throw error;
 }
+try { db.exec("ALTER TABLE projects ADD COLUMN github_repo TEXT NOT NULL DEFAULT ''"); } catch (error) {
+  if (!String(error.message).includes('duplicate column name')) throw error;
+}
+try { db.exec("ALTER TABLE projects ADD COLUMN github_token TEXT NOT NULL DEFAULT ''"); } catch (error) {
+  if (!String(error.message).includes('duplicate column name')) throw error;
+}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS github_links (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  item_type   TEXT NOT NULL,   -- 'commit' | 'pr' | 'issue'
+  item_id     TEXT NOT NULL,   -- SHA or PR# or Issue#
+  item_title  TEXT NOT NULL DEFAULT '',
+  target_type TEXT NOT NULL,   -- 'task' | 'requirement' | 'bug'
+  target_id   INTEGER NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS system_models (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  model_json  TEXT NOT NULL,
+  version     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS diagram_specs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  diagram_type    TEXT NOT NULL,
+  source_code     TEXT NOT NULL,
+  validation_json TEXT NOT NULL DEFAULT '[]',
+  version         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS generated_diagrams (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  diagram_type TEXT NOT NULL,
+  svg_path     TEXT NOT NULL DEFAULT '',
+  svg_content  TEXT,
+  version      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
+// Set default github_repo only for the seed EngineerOS project if empty
+try {
+  db.exec("UPDATE projects SET github_repo = 'arif-404-hub/OS' WHERE id = 1 AND (github_repo IS NULL OR github_repo = '')");
+} catch {}
 
 /** Run a SELECT and return all rows. */
 export const all = (sql, ...args) => db.prepare(sql).all(...args);
@@ -218,3 +271,4 @@ export const run = (sql, ...args) => db.prepare(sql).run(...args);
 export function log(projectId, userId, message) {
   run('INSERT INTO activity (project_id, user_id, message) VALUES (?, ?, ?)', projectId, userId, message);
 }
+
