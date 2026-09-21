@@ -3217,9 +3217,8 @@ function setupNavigationLinks() {
 // -------------------------------------------------------------- start -----
 
 (async function init() {
-<<<<<<< HEAD
   processOAuthResult();
-=======
+
   const hashParams = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
   const searchParams = new URLSearchParams(location.search);
   const socialToken = hashParams.get('auth_token') || searchParams.get('auth_token');
@@ -3227,12 +3226,12 @@ function setupNavigationLinks() {
 
   if (socialToken) {
     token.set(socialToken);
-    history.replaceState(null, '', location.pathname);
+    history.replaceState(null, '', location.pathname + location.search);
   }
   if (socialError) {
     el('authError').textContent = socialError;
     el('authError').classList.remove('hidden');
-    history.replaceState(null, '', location.pathname);
+    history.replaceState(null, '', location.pathname + location.search);
   }
 
   setupNavigationLinks();
@@ -3249,7 +3248,6 @@ function setupNavigationLinks() {
     openShowcaseModal(initialHash);
   }
 
->>>>>>> ece38a959b563e6b64cb427046c43b0ff0c2acb7
   if (!token.get()) return;
   try {
     const { user } = await api.get('/auth/me');
