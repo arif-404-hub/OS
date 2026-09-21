@@ -3,18 +3,18 @@ import { Router } from 'express';
 import { all, get } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { loadProject } from './projects.js';
-import { generateUML, UML_RECIPES, reviewCode, detectConflicts } from '../ai.js';
+import { generateUML, reviewCode, detectConflicts } from '../ai.js';
 import { projectRequirements } from './requirements.js';
 import { buildSRS, buildUniversitySRS, renderSRSHtml, renderSRSMarkdown, renderUniversitySRSHtml, renderUniversitySRSMarkdown } from '../srs.js';
 import { getProjectContext } from '../project-context.js';
+import { getArchitectureAndDBDesign } from '../architecture.js';
 
 export const router = Router({ mergeParams: true });
 router.use(requireAuth, loadProject);
 
 export const DIAGRAM_TYPES = [
   ['usecase', 'Use case'], ['class', 'Class'], ['sequence', 'Sequence'], ['activity', 'Activity'],
-  ['er', 'Entity relationship'], ['state', 'State'], ['context', 'Context'], ['swimlane', 'Swimlane'],
-  ['crc', 'CRC cards'], ['dfd', 'Data flow'], ['component', 'Component'], ['deployment', 'Deployment'],
+  ['er', 'Entity relationship'], ['state', 'State'], ['component', 'Component'], ['deployment', 'Deployment'],
 ];
 
 router.get('/uml/:type', (req, res) => {
@@ -26,15 +26,23 @@ router.get('/uml/:type', (req, res) => {
     return res.status(409).json({ error: 'Generate requirements first.', context });
   }
   const mermaid = generateUML(req.params.type, req.project, context.generatedRequirements);
-  res.json({ type: req.params.type, recipe: UML_RECIPES[req.params.type], mermaid, context });
+  res.json({ type: req.params.type, mermaid, context });
 });
 
-// Requirement -> user story -> task -> bug, end to end.
+// Requirement -> story -> sprint -> task -> commit -> PR -> test -> bug -> deployment.
 router.get('/traceability', (req, res) => {
   const requirements = projectRequirements(req.project.id);
-  const tasks = all(`SELECT t.*, u.name AS assignee_name FROM tasks t
-                     LEFT JOIN users u ON u.id = t.assignee_id WHERE t.project_id = ?`, req.project.id);
+  const tasks = all(`SELECT t.*, u.name AS assignee_name, s.name AS sprint_name
+                     FROM tasks t
+                     LEFT JOIN users u ON u.id = t.assignee_id
+                     LEFT JOIN sprints s ON s.id = t.sprint_id
+                     WHERE t.project_id = ?`, req.project.id);
   const bugs = all('SELECT * FROM bugs WHERE project_id = ?', req.project.id);
+  const taskIds = tasks.map((task) => task.id);
+  const commits = taskIds.length ? all(`SELECT * FROM task_commits WHERE task_id IN (${taskIds.map(() => '?').join(',')})`, ...taskIds) : [];
+  const pullRequests = taskIds.length ? all(`SELECT * FROM task_pull_requests WHERE task_id IN (${taskIds.map(() => '?').join(',')})`, ...taskIds) : [];
+  const tests = taskIds.length ? all(`SELECT * FROM task_tests WHERE task_id IN (${taskIds.map(() => '?').join(',')})`, ...taskIds) : [];
+  const deployments = taskIds.length ? all(`SELECT * FROM task_deployments WHERE task_id IN (${taskIds.map(() => '?').join(',')})`, ...taskIds) : [];
 
   const chain = requirements.map((r) => {
     const linked = tasks.filter((t) => t.requirement_id === r.id);
@@ -43,7 +51,18 @@ router.get('/traceability', (req, res) => {
     return {
       requirement: { id: r.id, code: r.code, title: r.title, kind: r.kind, priority: r.priority, quality: r.quality },
       story: r.story,
-      tasks: linked.map((t) => ({ id: t.id, title: t.title, status: t.status, points: t.points, assignee: t.assignee_name })),
+      tasks: linked.map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        points: t.points,
+        assignee: t.assignee_name,
+        sprint: t.sprint_name,
+        commits: commits.filter((item) => item.task_id === t.id),
+        pullRequests: pullRequests.filter((item) => item.task_id === t.id),
+        tests: tests.filter((item) => item.task_id === t.id),
+        deployments: deployments.filter((item) => item.task_id === t.id),
+      })),
       bugs: linkedBugs.map((b) => ({ id: b.id, title: b.title, severity: b.severity, status: b.status })),
       coverage: linked.length ? Math.round((done / linked.length) * 100) : 0,
       orphaned: linked.length === 0,
@@ -198,6 +217,22 @@ router.post('/ask', (req, res) => {
   }
 
   res.json({ question: req.body.question, answer });
+});
+
+// ------------------------------------------------ Architecture & DB ----
+
+router.get('/architecture', (req, res) => {
+  const context = getProjectContext(req.project);
+  const dialect = String(req.query.dialect || 'postgresql').toLowerCase();
+  const design = getArchitectureAndDBDesign(req.project, context.generatedRequirements, dialect);
+  res.json(design);
+});
+
+router.post('/architecture/generate', (req, res) => {
+  const context = getProjectContext(req.project);
+  const dialect = String(req.body.dialect || req.query.dialect || 'postgresql').toLowerCase();
+  const design = getArchitectureAndDBDesign(req.project, context.generatedRequirements, dialect);
+  res.json(design);
 });
 
 // ------------------------------------------------------------------ SRS ----

@@ -14,7 +14,10 @@ async function request(method, path, body) {
   if (auth) headers.Authorization = `Bearer ${auth}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(`api${path}`, {
+  const base = window.location.pathname.startsWith('/OS') ? '/OS/api' : '/api';
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+  const res = await fetch(`${base}${cleanPath}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),

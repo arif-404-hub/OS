@@ -108,6 +108,10 @@ router.delete('/:pid', loadProject, (req, res) => {
 
 // Add an existing user to the project team.
 router.post('/:pid/members', loadProject, (req, res) => {
+  const member = get('SELECT role FROM members WHERE project_id = ? AND user_id = ?', req.project.id, req.user.id);
+  if (req.project.owner_id !== req.user.id && req.user.role !== 'ADMIN' && member?.role !== 'PM') {
+    return res.status(403).json({ error: 'Only project managers can manage members.' });
+  }
   const user = get('SELECT id, name, role FROM users WHERE email = ?', String(req.body.email || '').trim().toLowerCase());
   if (!user) return res.status(404).json({ error: 'No account exists with that email.' });
 
@@ -118,6 +122,10 @@ router.post('/:pid/members', loadProject, (req, res) => {
 });
 
 router.delete('/:pid/members/:uid', loadProject, (req, res) => {
+  const member = get('SELECT role FROM members WHERE project_id = ? AND user_id = ?', req.project.id, req.user.id);
+  if (req.project.owner_id !== req.user.id && req.user.role !== 'ADMIN' && member?.role !== 'PM') {
+    return res.status(403).json({ error: 'Only project managers can manage members.' });
+  }
   run('DELETE FROM members WHERE project_id = ? AND user_id = ?', req.project.id, Number(req.params.uid));
   res.json({ ok: true });
 });

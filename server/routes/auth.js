@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { randomBytes } from 'node:crypto';
 import { all, get, run } from '../db.js';
 import { hashPassword, verifyPassword, issueToken, requireAuth, ROLES } from '../auth.js';
 

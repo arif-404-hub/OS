@@ -12,7 +12,13 @@ const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const BUG_STATUSES = ['open', 'in_progress', 'resolved'];
 
 const taskQuery = `
-  SELECT t.*, u.name AS assignee_name, r.code AS requirement_code, s.name AS sprint_name
+  SELECT t.*, u.name AS assignee_name, r.code AS requirement_code, s.name AS sprint_name,
+    COALESCE((
+      SELECT json_group_array(json_object('id', d.id, 'title', d.title, 'status', d.status))
+      FROM task_dependencies td
+      JOIN tasks d ON d.id = td.depends_on_id
+      WHERE td.task_id = t.id
+    ), '[]') AS dependencies
   FROM tasks t
   LEFT JOIN users u        ON u.id = t.assignee_id
   LEFT JOIN requirements r ON r.id = t.requirement_id
@@ -20,7 +26,10 @@ const taskQuery = `
   WHERE t.project_id = ?
   ORDER BY t.id`;
 
-const listTasks = (pid) => all(taskQuery, pid);
+const listTasks = (pid) => all(taskQuery, pid).map((task) => ({
+  ...task,
+  dependencies: JSON.parse(task.dependencies || '[]'),
+}));
 const listBugs = (pid) => all(`
   SELECT b.*, t.title AS task_title FROM bugs b
   LEFT JOIN tasks t ON t.id = b.task_id
@@ -46,6 +55,14 @@ router.post('/tasks', (req, res) => {
     title, String(req.body.description || '').trim(), status, points,
     req.body.assignee_id ? Number(req.body.assignee_id) : null);
 
+  const taskId = Number(get('SELECT last_insert_rowid() AS id').id);
+  const dependencies = Array.isArray(req.body.dependencies) ? req.body.dependencies.map(Number) : [];
+  const validDependencies = dependencies.filter((id) => id !== taskId
+    && get('SELECT id FROM tasks WHERE id = ? AND project_id = ?', id, req.project.id));
+  for (const dependencyId of new Set(validDependencies)) {
+    run('INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?)', taskId, dependencyId);
+  }
+
   log(req.project.id, req.user.id, `created task "${title}"`);
   res.status(201).json(listTasks(req.project.id));
 });
@@ -65,6 +82,16 @@ router.patch('/tasks/:tid', (req, res) => {
     req.body.requirement_id === undefined ? task.requirement_id : (req.body.requirement_id ? Number(req.body.requirement_id) : null),
     req.body.sprint_id === undefined ? task.sprint_id : (req.body.sprint_id ? Number(req.body.sprint_id) : null),
     task.id);
+
+  if (Array.isArray(req.body.dependencies)) {
+    const dependencies = req.body.dependencies.map(Number);
+    const validDependencies = dependencies.filter((id) => id !== task.id
+      && get('SELECT id FROM tasks WHERE id = ? AND project_id = ?', id, req.project.id));
+    run('DELETE FROM task_dependencies WHERE task_id = ?', task.id);
+    for (const dependencyId of new Set(validDependencies)) {
+      run('INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?)', task.id, dependencyId);
+    }
+  }
 
   if (status !== task.status) log(req.project.id, req.user.id, `moved "${task.title}" to ${status.replace('_', ' ')}`);
   res.json(listTasks(req.project.id));

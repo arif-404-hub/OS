@@ -1,5 +1,5 @@
-// IEEE 830 style Software Requirements Specification generator.
 import { detectConflicts } from './ai.js';
+import { synthesizeArchitecture, synthesizeDatabaseSchema, generateSQLScripts } from './architecture.js';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -35,7 +35,9 @@ const universitySections = [
   ['2. System Study and Requirement Gathering', ['2.1 Information gathering and system study', '2.1.1 Mission', '2.1.2 Vision', '2.2 Information sources', '2.3 Similar websites / platforms and key insights', '2.4 Current and desired state', '2.5 Survey methodology']],
   ['3. System Analysis', ['3.1 Gap analysis', '3.2 Feature list fixation', '3.2.1 Functional requirements', '3.2.2 Non-functional requirements', '3.3 Benchmarking', '3.4 SWOT analysis']],
   ['4. System Design', ['4.1 Context diagram', '4.2 State diagram', '4.3 Data-flow diagram', '4.4 Class diagram', '4.5 Sequence diagram', '4.6 Use-case diagram']],
-  ['5. Prototype / UI Design', []], ['6. Conclusion', []],
+  ['5. Prototype / UI Design', []],
+  ['6. Conclusion', []],
+  ['7. Architecture & Database Design', ['7.1 Architecture recommendation', '7.2 Database schema', '7.3 SQL generation']],
 ];
 
 function universitySectionContent(title, srs) {
@@ -46,6 +48,46 @@ function universitySectionContent(title, srs) {
   if (title === '3. System Analysis') return `<p>The current analysis contains ${functional.length} functional and ${nonFunctional.length} non-functional requirements.</p><p><strong>Gap analysis:</strong> Compare the current state in the project brief with the desired capabilities in the requirements below.</p><h3>Feature list</h3><ul>${functional.map((r) => `<li>${esc(r.title)}: ${esc(r.description)}</li>`).join('') || '<li>No functional features captured yet.</li>'}</ul><p><strong>Benchmarking and SWOT analysis:</strong> Add evidence-based comparisons and strengths, weaknesses, opportunities, and threats.</p>`;
   if (title === '4. System Design') return '<p class="placeholder">Insert the context, state, data-flow, class, sequence, and use-case diagrams for this project.</p>';
   if (title === '5. Prototype / UI Design') return '<p class="placeholder">Insert prototype screens, wireframes, design decisions, and usability notes here.</p>';
+  if (title === '7. Architecture & Database Design') {
+    const allReqs = [...(functional || []), ...(nonFunctional || [])];
+    const arch = synthesizeArchitecture(project, allReqs);
+    const db = synthesizeDatabaseSchema(project, allReqs);
+    const sqlScript = generateSQLScripts(db, 'postgresql');
+
+    const stackRows = arch.techStack.map((t) => `<tr><th>${esc(t.category)}</th><td><strong>${esc(t.technology)}</strong><br><small>${esc(t.rationale)}</small></td></tr>`).join('');
+    const tierRows = arch.tiers.map((t) => `<tr><th>${esc(t.name)}</th><td>${esc(t.responsibilities)}</td></tr>`).join('');
+    const tableCards = db.entities.map((e) => `
+      <div style="margin:14px 0;padding:12px;border:1px solid #d4d4d8;border-radius:6px">
+        <h4 style="margin:0 0 4px">${esc(e.name)} (Table: <code>${esc(e.table)}</code>)</h4>
+        <p style="font-size:13px;color:#555;margin:0 0 8px">${esc(e.description)}</p>
+        <table style="font-size:12.5px;margin:4px 0">
+          <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Description</th></tr></thead>
+          <tbody>
+            ${e.columns.map((c) => `<tr>
+              <td><strong>${esc(c.name)}</strong></td>
+              <td><code>${esc(c.type)}</code></td>
+              <td>${c.pk ? 'PK ' : ''}${c.fk ? 'FK (' + esc(c.fk) + ') ' : ''}${c.unique ? 'UNIQUE ' : ''}${c.nullable ? 'NULL' : 'NOT NULL'}</td>
+              <td>${esc(c.desc)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('');
+
+    return `
+      <p><strong>Primary Recommended Architecture:</strong> ${esc(arch.pattern)} (${esc(arch.primaryStyle)})</p>
+      <p>${esc(arch.patternRationale)}</p>
+      <h3>Component tiers</h3>
+      <table><thead><tr><th>Tier</th><th>Responsibilities</th></tr></thead><tbody>${tierRows}</tbody></table>
+      <h3>Recommended technology stack</h3>
+      <table><thead><tr><th>Layer</th><th>Technology &amp; Rationale</th></tr></thead><tbody>${stackRows}</tbody></table>
+      <h3>Database schema specification (3NF compliant)</h3>
+      <p>Total entities: ${db.stats.tablesCount} | Total relationships: ${db.stats.relationshipsCount} | Normalization: 3NF Verified</p>
+      ${tableCards}
+      <h3>Generated SQL DDL (PostgreSQL)</h3>
+      <pre style="background:#f4f4f5;padding:12px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.4"><code>${esc(sqlScript.slice(0, 3200))}${sqlScript.length > 3200 ? '\n\n-- [Truncated for preview - see Architecture & DB tab for full script] --' : ''}</code></pre>
+    `;
+  }
   return '<p>The proposed system addresses the stated problem through the analyzed requirements and provides a foundation for implementation and validation.</p>';
 }
 
@@ -266,7 +308,17 @@ export function renderUniversitySRSMarkdown(srs) {
     else if (title === '3. System Analysis') lines.push(`The current analysis contains ${functional.length} functional and ${nonFunctional.length} non-functional requirements.`, '', '### Functional requirements', ...functional.map((r) => `- **${r.code} ${r.title}:** ${r.description}`), '', '### Non-functional requirements', ...nonFunctional.map((r) => `- **${r.code} ${r.title}:** ${r.description}`), '');
     else if (title === '4. System Design') lines.push('Insert the context, state, data-flow, class, sequence, and use-case diagrams here.', '');
     else if (title === '5. Prototype / UI Design') lines.push('Insert prototype screens, wireframes, design decisions, and usability notes here.', '');
-    else lines.push('The proposed system addresses the stated problem through the analyzed requirements.', '');
+    else if (title === '7. Architecture & Database Design') {
+      const allReqs = [...(functional || []), ...(nonFunctional || [])];
+      const arch = synthesizeArchitecture(project, allReqs);
+      const db = synthesizeDatabaseSchema(project, allReqs);
+      const sqlScript = generateSQLScripts(db, 'postgresql');
+      lines.push(`**Primary Architecture:** ${arch.pattern} (${arch.primaryStyle})`, '', arch.patternRationale, '', '### Recommended Technology Stack', '', '| Layer | Technology | Rationale |', '| --- | --- | --- |', ...arch.techStack.map((t) => `| ${t.category} | ${t.technology} | ${t.rationale} |`), '', '### Database Schema & Tables (3NF Compliant)', '');
+      db.entities.forEach((e) => {
+        lines.push(`#### ${e.name} (\`${e.table}\`)`, e.description, '', '| Column | Type | Constraints | Description |', '| --- | --- | --- | --- |', ...e.columns.map((c) => `| ${c.name} | ${c.type} | ${c.pk ? 'PK ' : ''}${c.fk ? 'FK ' : ''}${c.unique ? 'UNIQUE ' : ''}${c.nullable ? 'NULL' : 'NOT NULL'} | ${c.desc} |`), '');
+      });
+      lines.push('### SQL Data Definition (PostgreSQL)', '', '```sql', sqlScript.slice(0, 3200) + (sqlScript.length > 3200 ? '\n\n-- [Truncated for preview - see Architecture & DB tab for full script] --' : ''), '```', '');
+    } else lines.push('The proposed system addresses the stated problem through the analyzed requirements.', '');
   });
   lines.push('## References', '', 'Add books, papers, websites, survey instruments, and other sources consulted.', '', `_Generated by EngineerOS on ${date}._`);
   return lines.join('\n');

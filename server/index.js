@@ -20,11 +20,13 @@ initPostgres().catch(err => console.warn('[PostgreSQL Init]', err.message));
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(join(root, 'public')));
+app.use('/OS', express.static(join(root, 'public')));
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'EngineerOS', version: '1.0.0' }));
-
-app.use('/api/auth', authRouter);
-app.use('/api/projects', projectsRouter);
+const apiRouter = express.Router();
+apiRouter.get('/health', (_req, res) => res.json({ ok: true, service: 'EngineerOS', version: '1.0.0' }));
+apiRouter.use('/auth', authRouter);
+apiRouter.use('/organizations', organizationsRouter);
+apiRouter.use('/projects', projectsRouter);
 // Project-scoped routers each re-check membership through loadProject.
 app.use('/api/projects/:pid/requirements', requirementsRouter);
 app.use('/api/projects/:pid', workRouter);
@@ -32,7 +34,8 @@ app.use('/api/projects/:pid', intelRouter);
 app.use('/api/projects/:pid/github', githubRouter);
 app.use('/api/uml', umlRouter);
 
-app.use('/api', (_req, res) => res.status(404).json({ error: 'Unknown API endpoint.' }));
+app.use('/api', apiRouter);
+app.use('/OS/api', apiRouter);
 
 // Any non-API path falls through to the single-page client.
 app.get('*', (_req, res) => res.sendFile(join(root, 'public', 'index.html')));
@@ -43,6 +46,6 @@ app.use((err, _req, res, _next) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
-  console.log(`EngineerOS running at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`EngineerOS running at http://localhost:${port} (or http://127.0.0.1:${port})`);
 });

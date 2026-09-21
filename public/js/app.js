@@ -11,7 +11,7 @@ const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-const state = { user: null, projects: [], project: null, view: 'dashboard', users: [] };
+const state = { user: null, projects: [], project: null, view: 'dashboard', users: [], boardSprintId: 'all' };
 
 const STATUS_LABEL = { backlog: 'Backlog', todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done' };
 const BUG_STATUS_LABEL = { open: 'Open', in_progress: 'In progress', resolved: 'Resolved' };
@@ -310,9 +310,10 @@ const VIEW_META = {
   requirements: ['Requirements', 'Generate, score and review functional and non-functional requirements'],
   srs: ['SRS document', 'IEEE-830 specification generated from your requirements'],
   uml: ['UML diagrams', 'AI-generated from the active requirement set'],
+  architecture: ['Architecture & DB Design', 'System architecture recommendation, database schema and multi-dialect SQL generation'],
   board: ['Sprint board', 'Plan, assign and move work across the sprint'],
   bugs: ['Bug tracker', 'Defects by severity, with duplicate detection'],
-  trace: ['Traceability', 'Requirement to story to task to defect, end to end'],
+  trace: ['Traceability', 'Requirement to story to sprint, delivery evidence, defects and deployment'],
   review: ['AI code review', 'Static analysis for smells, security and complexity'],
   github: ['GitHub Integration', 'Repositories, Commits, Pull Requests, Issues and CI/CD Actions'],
   assistant: ['Assistant', 'Ask questions about this project in plain English'],
@@ -324,6 +325,7 @@ const VIEWS = {
   requirements: renderRequirements,
   srs: renderSRS,
   uml: renderUML,
+  architecture: renderArchitecture,
   board: renderBoard,
   bugs: renderBugs,
   trace: renderTrace,
@@ -704,8 +706,7 @@ async function renderSRS() {
 
 const DIAGRAMS = [
   ['usecase', 'Use case'], ['class', 'Class'], ['sequence', 'Sequence'], ['activity', 'Activity'],
-  ['er', 'Entity relationship'], ['state', 'State'], ['context', 'Context'], ['swimlane', 'Swimlane'],
-  ['crc', 'CRC cards'], ['dfd', 'Data flow'], ['component', 'Component'], ['deployment', 'Deployment'],
+  ['er', 'Entity relationship'], ['state', 'State'], ['component', 'Component'], ['deployment', 'Deployment'],
 ];
 
 let mermaidLib = null;
@@ -728,6 +729,359 @@ async function renderUML() {
   await initUMLStudio(el('view'), state.project, api, toast, openModal, closeModal);
 }
 
+// -------------------------------------------------------- architecture ----
+
+let archTab = 'recommendation';
+let sqlDialect = 'postgresql';
+
+async function renderArchitecture() {
+  el('topbarActions').innerHTML = `
+    <div class="row">
+      <div class="tab-group" id="archSubTabs">
+        <button class="btn small ${archTab === 'recommendation' ? 'primary' : ''}" data-arch-tab="recommendation">🏛 Architecture recommendation</button>
+        <button class="btn small ${archTab === 'schema' ? 'primary' : ''}" data-arch-tab="schema">⛁ Database schema</button>
+        <button class="btn small ${archTab === 'sql' ? 'primary' : ''}" data-arch-tab="sql">⚡ SQL generation</button>
+      </div>
+      <button class="btn small ghost" id="refreshArchBtn" title="Regenerate from latest requirements">↻ Refresh</button>
+    </div>
+  `;
+
+  let design;
+  try {
+    design = await api.get(`${P()}/architecture?dialect=${sqlDialect}`);
+  } catch (err) {
+    if (err.message === 'Generate requirements first.') {
+      el('view').innerHTML = `<div class="card workflow-empty">
+        <div class="big">🏛</div>
+        <h3>Generate requirements first</h3>
+        <p class="muted">Architecture and database recommendations are synthesized from this project's description and saved requirements.</p>
+        <button class="btn primary" id="goRequirements">Open Requirements</button>
+      </div>`;
+      el('goRequirements').addEventListener('click', () => { state.view = 'requirements'; render(); });
+      return;
+    }
+    throw err;
+  }
+
+  const { architecture: arch, schema, sql } = design;
+
+  el('topbarActions').addEventListener('click', (e) => {
+    const tabBtn = e.target.closest('[data-arch-tab]');
+    if (tabBtn) {
+      archTab = tabBtn.dataset.archTab;
+      render();
+      return;
+    }
+    if (e.target.id === 'refreshArchBtn') {
+      render();
+      toast('Architecture & DB design refreshed.');
+    }
+  });
+
+  if (archTab === 'recommendation') {
+    el('view').innerHTML = `
+      <div class="card arch-hero">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px">
+          <span class="pill blue">Recommended Architecture Pattern</span>
+          <span class="pill green">${esc(arch.primaryStyle)}</span>
+        </div>
+        <h2 style="font-size:22px;margin:0 0 8px">${esc(arch.pattern)}</h2>
+        <p class="arch-rationale" style="margin:0;color:var(--text);line-height:1.6">${esc(arch.patternRationale)}</p>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:16px">
+        <div class="card">
+          <div class="row" style="justify-content:space-between;margin-bottom:12px">
+            <h3 style="margin:0"><span class="panel-icon blue">◇</span> Architecture topology</h3>
+            <button class="btn small" id="copyArchMermaid">Copy Mermaid</button>
+          </div>
+          <p class="muted" style="margin:0 0 12px;font-size:13px">End-to-end container and tier communication flow synthesized for "${esc(state.project.name)}".</p>
+          <div class="mermaid-box" id="archDiagram"><span class="muted">Rendering architecture diagram…</span></div>
+        </div>
+
+        <div class="card">
+          <div class="panel-heading"><h3><span class="panel-icon blue">⚙</span> Recommended technology stack</h3></div>
+          <p class="muted" style="margin:0 0 14px;font-size:13px">Curated for production reliability, team velocity, and project requirements.</p>
+          <div class="tech-stack-list">
+            ${arch.techStack.map((t) => `
+              <div class="tech-stack-card">
+                <div class="row" style="justify-content:space-between;margin-bottom:4px">
+                  <span class="pill grey" style="font-size:11px">${esc(t.category)}</span>
+                  <span class="muted" style="font-size:11.5px">Alt: ${esc(t.alternatives)}</span>
+                </div>
+                <strong style="font-size:14.5px;color:var(--brand)">${esc(t.technology)}</strong>
+                <p style="margin:4px 0 0;font-size:12.5px;color:var(--text)">${esc(t.rationale)}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="panel-heading"><h3><span class="panel-icon blue">▦</span> System architecture layers &amp; component breakdown</h3></div>
+        <div class="tiers-grid">
+          ${arch.tiers.map((tier) => `
+            <div class="tier-item">
+              <h4>${esc(tier.name)}</h4>
+              <p class="tier-resp">${esc(tier.responsibilities)}</p>
+              <div class="tier-components">
+                ${tier.components.map((c) => `<span class="tier-component-pill">▸ ${esc(c)}</span>`).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="panel-heading"><h3><span class="panel-icon blue">⚖</span> Architectural trade-offs &amp; operational strategies</h3></div>
+        <div class="grid cols-2" style="gap:14px;margin-top:8px">
+          ${arch.tradeOffs.map((to) => `
+            <div class="tradeoff-card">
+              <div class="row" style="justify-content:space-between;margin-bottom:6px">
+                <strong style="font-size:14px">${esc(to.area)}</strong>
+                <span class="pill green">Verified Strategy</span>
+              </div>
+              <p style="margin:0 0 6px;font-size:13px"><strong>Strategy:</strong> ${esc(to.strategy)}</p>
+              <p style="margin:0;font-size:12.5px;color:var(--muted)"><strong>Impact:</strong> ${esc(to.impact)}</p>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    el('copyArchMermaid').addEventListener('click', () => {
+      navigator.clipboard.writeText(arch.mermaidArchitecture).then(() => toast('Architecture Mermaid copied.'));
+    });
+
+    const lib = await loadMermaid();
+    const box = el('archDiagram');
+    if (!lib) {
+      box.innerHTML = '<span class="muted">Mermaid diagram renderer requires network. You can copy the raw Mermaid source with the button above.</span>';
+    } else {
+      try {
+        const { svg } = await lib.render(`arch_${Date.now()}`, arch.mermaidArchitecture);
+        box.innerHTML = svg;
+      } catch (err) {
+        box.innerHTML = `<span class="muted">Diagram preview unavailable: ${esc(err.message)}</span>`;
+      }
+    }
+  } else if (archTab === 'schema') {
+    el('view').innerHTML = `
+      <div class="grid cols-4 dashboard-stats">
+        <div class="stat"><div class="stat-icon blue">⛁</div><div class="label">Tables / Entities</div><div class="value">${schema.stats.tablesCount}</div><div class="sub">Relational entities</div></div>
+        <div class="stat"><div class="stat-icon teal">⇄</div><div class="label">Relationships</div><div class="value">${schema.stats.relationshipsCount}</div><div class="sub">Foreign-key constraints</div></div>
+        <div class="stat"><div class="stat-icon violet">⬡</div><div class="label">Recommended indexes</div><div class="value">${schema.stats.indexesCount}</div><div class="sub">For query acceleration</div></div>
+        <div class="stat"><div class="stat-icon green">✓</div><div class="label">Normalization</div><div class="value" style="color:var(--ok)">3NF</div><div class="sub">Third Normal Form Verified</div></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="row" style="justify-content:space-between;margin-bottom:12px">
+          <h3 style="margin:0"><span class="panel-icon blue">◇</span> Entity-Relationship Diagram (ERD)</h3>
+          <button class="btn small" id="copyErMermaid">Copy ER Mermaid</button>
+        </div>
+        <p class="muted" style="margin:0 0 12px;font-size:13px">Synthesized relational entity model with cardinalities and primary/foreign keys.</p>
+        <div class="mermaid-box" id="erDiagram"><span class="muted">Rendering ER diagram…</span></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="panel-heading"><h3><span class="panel-icon blue">▦</span> Table specifications &amp; attribute definitions</h3></div>
+        <div class="schema-tables-list">
+          ${schema.entities.map((e) => `
+            <div class="schema-table-box">
+              <div class="row schema-table-header" style="justify-content:space-between">
+                <div>
+                  <strong style="font-size:16px">${esc(e.name)}</strong>
+                  <code style="margin-left:8px;font-size:13px">${esc(e.table)}</code>
+                </div>
+                <div>
+                  <span class="pill ${e.isCore ? 'blue' : 'teal'}">${e.isCore ? 'Core System' : 'Domain Entity'}</span>
+                  <span class="pill grey">${e.columns.length} columns</span>
+                </div>
+              </div>
+              <p class="muted" style="margin:4px 0 12px;font-size:13px">${esc(e.description)}</p>
+
+              <div style="overflow-x:auto">
+                <table class="schema-cols-table">
+                  <thead>
+                    <tr>
+                      <th style="width:24%">Column</th>
+                      <th style="width:18%">Data Type</th>
+                      <th style="width:26%">Constraints &amp; Defaults</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${e.columns.map((c) => `
+                      <tr>
+                        <td>
+                          <strong>${esc(c.name)}</strong>
+                          ${c.pk ? '<span class="pill red small" style="margin-left:4px;font-size:10px">PK</span>' : ''}
+                          ${c.fk ? `<span class="pill blue small" style="margin-left:4px;font-size:10px" title="References ${esc(c.fk)}">FK</span>` : ''}
+                          ${c.unique && !c.pk ? '<span class="pill amber small" style="margin-left:4px;font-size:10px">UNIQUE</span>' : ''}
+                        </td>
+                        <td><code>${esc(c.type)}</code></td>
+                        <td>
+                          <span style="font-size:12px">
+                            ${c.nullable ? '<span class="muted">NULL</span>' : '<strong>NOT NULL</strong>'}
+                            ${c.default ? `<br><span class="muted">Default: <code>${esc(c.default)}</code></span>` : ''}
+                            ${c.fk ? `<br><span class="muted">Refs: <code>${esc(c.fk)}</code></span>` : ''}
+                          </span>
+                        </td>
+                        <td style="font-size:13px">${esc(c.desc)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              ${e.indexes?.length ? `
+                <div class="row" style="margin-top:10px;font-size:12.5px">
+                  <span class="muted">Indexes:</span>
+                  ${e.indexes.map((idx) => `<code>${esc(idx)}</code>`).join(' ')}
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:16px">
+        <div class="card">
+          <div class="panel-heading"><h3><span class="panel-icon blue">⇄</span> Foreign key relationships</h3></div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>From Table</th><th>To Table</th><th>Type</th><th>On Delete</th></tr></thead>
+              <tbody>
+                ${schema.relationships.map((r) => `
+                  <tr>
+                    <td><code>${esc(r.from)}.${esc(r.fromColumn)}</code></td>
+                    <td><code>${esc(r.to)}.${esc(r.toColumn)}</code></td>
+                    <td><span class="pill grey">${esc(r.cardinality)}</span></td>
+                    <td><span class="pill ${r.onDelete === 'CASCADE' ? 'amber' : 'grey'}">${esc(r.onDelete)}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-heading"><h3><span class="panel-icon blue">✓</span> Normalization analysis (3NF)</h3></div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+            ${schema.normalizationNotes.map((n) => `
+              <div style="padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px">
+                <div class="row" style="justify-content:space-between;margin-bottom:4px">
+                  <strong>${esc(n.form)}</strong>
+                  <span class="pill green">${esc(n.status)}</span>
+                </div>
+                <p style="margin:0;font-size:12.5px;color:var(--text)">${esc(n.details)}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    el('copyErMermaid').addEventListener('click', () => {
+      navigator.clipboard.writeText(schema.mermaidER).then(() => toast('ER Mermaid source copied.'));
+    });
+
+    const lib = await loadMermaid();
+    const box = el('erDiagram');
+    if (!lib) {
+      box.innerHTML = '<span class="muted">Mermaid diagram renderer requires network. You can copy the raw Mermaid ER source above.</span>';
+    } else {
+      try {
+        const { svg } = await lib.render(`er_${Date.now()}`, schema.mermaidER);
+        box.innerHTML = svg;
+      } catch (err) {
+        box.innerHTML = `<span class="muted">ER diagram preview unavailable: ${esc(err.message)}</span>`;
+      }
+    }
+  } else if (archTab === 'sql') {
+    const currentSql = sql[sqlDialect] || sql.postgresql;
+    const lineCount = currentSql.split('\n').length;
+    const byteSize = new Blob([currentSql]).size;
+    const sizeKb = (byteSize / 1024).toFixed(1);
+
+    el('view').innerHTML = `
+      <div class="card" style="margin-bottom:16px">
+        <div class="row" style="justify-content:space-between">
+          <div class="row">
+            <span style="font-weight:600;font-size:14px">Target SQL Dialect:</span>
+            <div class="tab-group" id="sqlDialectGroup">
+              <button class="btn small ${sqlDialect === 'postgresql' ? 'primary' : ''}" data-dialect="postgresql">PostgreSQL</button>
+              <button class="btn small ${sqlDialect === 'mysql' ? 'primary' : ''}" data-dialect="mysql">MySQL / MariaDB</button>
+              <button class="btn small ${sqlDialect === 'sqlite' ? 'primary' : ''}" data-dialect="sqlite">SQLite 3</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="muted" style="font-size:13px">${lineCount} lines &middot; ${sizeKb} KB</span>
+            <button class="btn small" id="copySqlBtn">Copy SQL</button>
+            <button class="btn small primary" id="downloadSqlBtn">Download .sql</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="code-viewer-header row" style="justify-content:space-between;padding:10px 16px;background:#1e293b;color:#e2e8f0;border-bottom:1px solid #334155">
+          <div class="row">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444"></span>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b"></span>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981"></span>
+            <span style="margin-left:10px;font-family:monospace;font-size:13px;color:#94a3b8">schema-${esc(state.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'))}-${sqlDialect}.sql</span>
+          </div>
+          <span class="pill blue small" style="font-size:11px">${sqlDialect.toUpperCase()} DDL &amp; DML</span>
+        </div>
+        <pre class="sql-code-block" id="sqlCodeContent"><code>${esc(currentSql)}</code></pre>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="panel-heading"><h3><span class="panel-icon blue">⚡</span> SQL Features &amp; execution instructions</h3></div>
+        <div class="grid cols-3" style="gap:12px;margin-top:8px">
+          <div style="padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px">
+            <strong>DDL Table Creation</strong>
+            <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">Full <code>CREATE TABLE</code> definitions with typed columns, primary keys, and nullability.</p>
+          </div>
+          <div style="padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px">
+            <strong>Referential Integrity</strong>
+            <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">Foreign key constraints with <code>ON DELETE CASCADE</code> / <code>SET NULL</code> rules.</p>
+          </div>
+          <div style="padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px">
+            <strong>Seed Data &amp; Verification</strong>
+            <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">Pre-seeded sample records and analytical JOIN queries to verify the schema immediately.</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    el('sqlDialectGroup').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-dialect]');
+      if (btn) {
+        sqlDialect = btn.dataset.dialect;
+        render();
+      }
+    });
+
+    el('copySqlBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(currentSql).then(() => toast('SQL script copied to clipboard.'));
+    });
+
+    el('downloadSqlBtn').addEventListener('click', () => {
+      const slug = state.project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';
+      const filename = `schema-${slug}-${sqlDialect}.sql`;
+      const blob = new Blob([currentSql], { type: 'text/sql' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`Downloaded ${filename}`);
+    });
+  }
+}
+
 // -------------------------------------------------------------- board -----
 
 async function renderBoard() {
@@ -736,13 +1090,22 @@ async function renderBoard() {
     api.get(`${P()}/requirements`),
   ]);
 
+  const sprints = state.project.sprints || [];
+  const selectedSprint = state.boardSprintId === 'all' ? null : Number(state.boardSprintId);
+  const visibleTasks = selectedSprint ? tasks.filter((t) => t.sprint_id === selectedSprint) : tasks;
   el('topbarActions').innerHTML = `
-    <span class="muted" style="font-size:13.5px">${tasks.filter((t) => t.status === 'done').length} of ${tasks.length} done</span>
+    <label class="muted" for="boardSprint" style="font-size:13px">Sprint</label>
+    <select id="boardSprint" style="width:auto;padding:7px 10px">
+      <option value="all">All sprints / backlog</option>
+      ${sprints.map((s) => `<option value="${s.id}" ${String(s.id) === String(state.boardSprintId) ? 'selected' : ''}>${esc(s.name)}${s.status === 'completed' ? ' (completed)' : ''}</option>`).join('')}
+    </select>
+    <button class="btn" id="newSprintBtn">+ New sprint</button>
+    <span class="muted" style="font-size:13.5px">${visibleTasks.filter((t) => t.status === 'done').length} of ${visibleTasks.length} done</span>
     <button class="btn primary" id="newTaskBtn">+ New task</button>`;
 
   el('view').innerHTML = `<div class="board">
     ${Object.entries(STATUS_LABEL).map(([status, label]) => {
-      const column = tasks.filter((t) => t.status === status);
+      const column = visibleTasks.filter((t) => t.status === status);
       return `<div class="col" data-status="${status}">
         <header><span>${label}</span><span class="pill grey">${column.length}</span></header>
         ${column.map((t) => `
@@ -756,6 +1119,12 @@ async function renderBoard() {
               <span>${esc(t.assignee_name || 'Unassigned')}</span>
               <button class="btn ghost small danger" data-del-task="${t.id}">✕</button>
             </div>
+            ${t.dependencies.length ? `<div style="margin-top:8px;font-size:11.5px">
+              <span class="pill ${t.dependencies.some((d) => d.status !== 'done') ? 'red' : 'green'}">
+                ${t.dependencies.some((d) => d.status !== 'done') ? 'Blocked by' : 'Depends on'} ${t.dependencies.length}
+              </span>
+              <div class="muted" style="margin-top:4px">${t.dependencies.map((d) => esc(d.title)).join(', ')}</div>
+            </div>` : ''}
           </div>`).join('')}
       </div>`;
     }).join('')}
@@ -789,6 +1158,34 @@ async function renderBoard() {
     render();
   });
 
+  el('boardSprint').addEventListener('change', (e) => {
+    state.boardSprintId = e.target.value;
+    render();
+  });
+
+  el('newSprintBtn').addEventListener('click', () => {
+    openModal('New sprint', `
+      <div class="field"><label for="sprintName">Sprint name</label><input id="sprintName" placeholder="Sprint 4 - Delivery"></div>
+      <p class="error hidden" id="sprintError"></p>
+      <button class="btn primary block" id="sprintSave">Create sprint</button>
+    `, () => {
+      el('sprintName').focus();
+      el('sprintSave').addEventListener('click', async () => {
+        try {
+          const created = await api.post(`${P()}/sprints`, { name: el('sprintName').value });
+          state.project.sprints = created;
+          state.boardSprintId = created[created.length - 1]?.id || 'all';
+          closeModal();
+          toast('Sprint created.');
+          render();
+        } catch (err) {
+          el('sprintError').textContent = err.message;
+          el('sprintError').classList.remove('hidden');
+        }
+      });
+    });
+  });
+
   el('newTaskBtn').addEventListener('click', () => {
     openModal('New task', `
       <div class="field"><label for="tTitle">Title</label><input id="tTitle" placeholder="Build the document upload endpoint"></div>
@@ -809,6 +1206,11 @@ async function renderBoard() {
         <div class="field grow"><label for="tStatus">Column</label>
           <select id="tStatus">${Object.entries(STATUS_LABEL).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
       </div>
+      <div class="field"><label for="tDependencies">Dependencies <span class="muted">(tasks that must be completed first)</span></label>
+        <select id="tDependencies" multiple size="4">
+          ${tasks.map((task) => `<option value="${task.id}">${esc(task.title)}</option>`).join('')}
+        </select>
+      </div>
       <p class="error hidden" id="tError"></p>
       <button class="btn primary block" id="tSave">Create task</button>
     `, () => {
@@ -822,7 +1224,8 @@ async function renderBoard() {
             assignee_id: el('tAssignee').value || null,
             points: Number(el('tPoints').value),
             status: el('tStatus').value,
-            sprint_id: state.project.sprints?.[0]?.id || null,
+            sprint_id: selectedSprint || state.project.sprints?.[0]?.id || null,
+            dependencies: [...el('tDependencies').selectedOptions].map((option) => Number(option.value)),
           });
           closeModal();
           toast('Task created.');
@@ -921,6 +1324,14 @@ async function renderTrace() {
   const t = await api.get(`${P()}/traceability`);
 
   el('view').innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <h3>End-to-end delivery chain</h3>
+      <div class="trace-chain">
+        ${['Requirement', 'Story', 'Sprint', 'Task', 'Commit', 'PR', 'Test', 'Bug', 'Deployment'].map((label, index) => `
+          <span class="trace-chain-step"><b>${index + 1}</b>${label}</span>${index < 8 ? '<span class="trace-chain-arrow">→</span>' : ''}
+        `).join('')}
+      </div>
+    </div>
     <div class="grid cols-3" style="margin-bottom:16px">
       <div class="stat"><div class="label">Requirements covered</div><div class="value">${t.covered}/${t.total}</div>
         <div class="sub">have at least one task</div>${meter(t.coveragePercent)}</div>
@@ -944,13 +1355,21 @@ async function renderTrace() {
           <div class="story" style="margin:8px 0 0;font-size:12.5px">${esc(c.story)}</div>
         </div>
         <div class="trace-col">
-          <h5>Tasks (${c.tasks.length})</h5>
+          <h5>Story → Sprint → Task (${c.tasks.length})</h5>
           ${c.tasks.length ? c.tasks.map((task) => `
             <div class="trace-item">
+              <div class="muted" style="font-size:12px">${esc(c.story || 'Story not written')}</div>
               <div>${esc(task.title)}</div>
               <div class="row" style="justify-content:space-between;margin-top:5px">
                 <span class="pill ${task.status === 'done' ? 'green' : task.status === 'in_progress' ? 'blue' : 'grey'}">${STATUS_LABEL[task.status]}</span>
-                <span class="muted" style="font-size:12px">${esc(task.assignee || 'Unassigned')} · ${task.points} pts</span>
+                <span class="muted" style="font-size:12px">${esc(task.sprint || 'Backlog')} · ${esc(task.assignee || 'Unassigned')} · ${task.points} pts</span>
+              </div>
+              <div class="trace-evidence">
+                <span class="pill ${task.commits.length ? 'green' : 'grey'}">Commit ${task.commits.length || '—'}</span>
+                <span class="pill ${task.pullRequests.length ? 'green' : 'grey'}">PR ${task.pullRequests.length || '—'}</span>
+                <span class="pill ${task.tests.length ? 'green' : 'grey'}">Test ${task.tests.length || '—'}</span>
+                <span class="pill ${c.bugs.length ? 'red' : 'grey'}">Bug ${c.bugs.length || '—'}</span>
+                <span class="pill ${task.deployments.length ? 'green' : 'grey'}">Deploy ${task.deployments.length || '—'}</span>
               </div>
             </div>`).join('') + meter(c.coverage)
             : '<div class="issues">No task implements this requirement yet.</div>'}
