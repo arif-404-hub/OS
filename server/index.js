@@ -6,6 +6,7 @@ import './db.js';
 import { router as authRouter } from './routes/auth.js';
 import { router as projectsRouter } from './routes/projects.js';
 import { router as requirementsRouter } from './routes/requirements.js';
+import { router as organizationsRouter } from './routes/organizations.js';
 import { router as workRouter } from './routes/work.js';
 import { router as intelRouter } from './routes/intel.js';
 import { router as githubRouter } from './routes/github.js';
