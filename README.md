@@ -14,6 +14,7 @@ npm install
 npm run seed
 npm start
 ```
+or https://os-o4f1.onrender.com/
 
 Then open <http://localhost:3000> and sign in with:
 
